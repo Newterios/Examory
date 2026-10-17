@@ -75,7 +75,7 @@ Detailed stage reports: [docs/06_reports](docs/06_reports).
 
 ## Task tracking
 
-Tasks are tracked in YouTrack, project key `LMS`. Every branch and commit references a task ID, e.g. `LMS-6: add use case diagram`.
+Tasks are tracked in YouTrack, project key `LMS`. Stage-1 tasks are listed in `scripts/youtrack_seed.py` and in [docs/06_reports/prob-period-1.md](docs/06_reports/prob-period-1.md). Every branch and commit references a task ID, e.g. `LMS-6: add use case diagram`.
 
 <!-- TODO: replace with the real board URL -->
 YouTrack board: _link to be added_
