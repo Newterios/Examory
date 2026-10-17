@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["prob-period-*", "v*"]
+
+jobs:
+  go-services:
+    name: Build and test Go services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Build and test every Go module under services/
+        run: |
+          set -e
+          mods=$(find services -name go.mod -not -path '*/vendor/*' || true)
+          if [ -z "$mods" ]; then echo "No Go modules yet, skipping"; exit 0; fi
+          for m in $mods; do
+            d=$(dirname "$m"); echo "== $d"
+            (cd "$d" && go vet ./... && go build ./... && go test ./...)
+          done
+
+  python-ml:
+    name: Lint Python in ml/ and analytics/
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ruff
+        run: |
+          if ! find ml analytics -name '*.py' | grep -q .; then echo "No Python files yet, skipping"; exit 0; fi
+          pip install ruff && ruff check ml analytics
+
+  docs:
+    name: Check Markdown links and structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required files exist
+        run: |
+          for f in README.md docs/03_architecture/architecture.md docs/03_architecture/events.md docker-compose.yml; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+      - name: Compose file is valid
+        run: docker compose config -q
