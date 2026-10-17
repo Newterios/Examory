@@ -77,8 +77,8 @@ Detailed stage reports: [docs/06_reports](docs/06_reports).
 
 Tasks are tracked in YouTrack, project key `LMS`. Stage-1 tasks are listed in `scripts/youtrack_seed.py` and in [docs/06_reports/prob-period-1.md](docs/06_reports/prob-period-1.md). Every branch and commit references a task ID, e.g. `LMS-6: add use case diagram`.
 
-<!-- TODO: replace with the real board URL -->
-YouTrack board: _link to be added_
+
+YouTrack: project [LMS](https://examory.youtrack.cloud/projects/LMS) · [Kanban board](https://examory.youtrack.cloud/agiles/204-1/current) · [issues](https://examory.youtrack.cloud/issues?q=project:%20LMS)
 
 ## Workflow
 
