@@ -1,0 +1,99 @@
+' docs/04_uml/seq_exam_proctoring.puml
+@startuml
+title Examory - Consented exam proctoring
+actor Student
+boundary Web
+participant "exam-sessions" as Exam
+participant webcam as Webcam
+participant "Windows client agent" as Agent
+participant "event-collector" as Collector
+queue Kafka
+participant "ML proctoring" as Proctoring
+participant grading
+actor Teacher
+
+note over Web, grading
+  Authenticated APIs use Nginx (omitted). Events use the common envelope.
+  exam.* payload fields and webcam transport are not specified in the brief;
+  this sequence proposes authorized evidence references, not raw video in Kafka.
+end note
+Student -> Web : Request exam
+Web -> Exam : Read session details and consent notice
+Exam --> Web : Purpose, webcam/agent collection, retention and withdrawal
+Web --> Student : Show separate webcam and agent consent choices
+Student -> Web : Submit consent choices
+alt Both required consents granted
+  Web -> Exam : Record consent flags, version and timestamp
+  Exam --> Web : Consent recorded
+  Web -> Webcam : Check permission and readiness without capture
+  Webcam --> Web : Readiness status
+  Web -> Agent : Check connection and readiness without collection
+  Agent --> Web : Readiness status
+  break Readiness check fails
+    Web --> Student : Explain failed check and recovery action; no capture
+  end
+  Web -> Exam : Start ready, consented session
+  Exam --> Web : session_id and active session status
+  Exam -> Kafka : exam.started
+  note right of Kafka
+    Proposed payload: session_id, webcam_consent,
+    agent_consent, consent_version, consent_recorded_at.
+  end note
+  Kafka -> Proctoring : exam.started
+  Web -> Webcam : Start authorized capture for session_id
+  Web -> Agent : Start authorized session monitoring
+  loop While ExamSession is active and consent remains valid
+    Webcam -> Web : Consented webcam observations
+    Web -> Collector : Authorized webcam evidence reference + session_id
+    Agent -> Collector : Client signal with session_id and capture timestamp
+    Collector -> Kafka : exam.agent_signal (authorized signal/evidence references)
+    Kafka -> Proctoring : exam.agent_signal
+    opt Proctoring evaluation reports a risk
+      Proctoring -> Kafka : risk.proctoring
+      note right of Proctoring
+        Payload: risk_id, target_id = session_id,
+        score, level, explanation, evidence.
+      end note
+      Kafka -> grading : risk.proctoring
+      grading -> grading : Store risk beside ExamSession; status = pending
+    end
+  end
+  alt Student completes exam
+    Web -> Exam : End ExamSession
+  else Server-controlled session time expires
+    Exam -> Exam : End ExamSession once
+  else Student withdraws either consent
+    Student -> Web : Withdraw consent and stop monitoring
+    Web -> Webcam : Stop capture immediately
+    Web -> Agent : Stop collection immediately
+    Web -> Exam : Record withdrawal; end ExamSession
+  end
+  Exam --> Web : Closed session status
+  Web -> Webcam : Ensure capture is stopped
+  Web -> Agent : Ensure collection is stopped
+  Exam -> Collector : Reject further collection for closed session
+  Exam -> Kafka : exam.ended
+  Kafka -> Proctoring : exam.ended; stop session processing
+  Web --> Student : Session ended; show completion or withdrawal status
+  opt Pending proctoring signals exist
+    Teacher -> Web : Inspect pending proctoring signals
+    Web -> grading : Read authorized risks and evidence
+    grading --> Web : Explanation, evidence and status
+    Web --> Teacher : Show review controls
+    Teacher -> Web : Confirm or dismiss with reason
+    Web -> grading : Save Teacher review
+    grading -> Kafka : risk.reviewed
+    grading --> Web : Review saved
+  end
+else Either required consent declined
+  Web --> Student : Session not started; contact Teacher for an alternative
+  note over Webcam, Agent : No webcam capture or agent collection starts.
+end
+note over Exam, grading
+  Monitoring failure is shown as unavailable, not proof of misconduct.
+  Signal, consent refusal or withdrawal never imposes an automatic penalty.
+  Session timeout closes the session independently of Web availability.
+  The Agent stops locally on withdrawal or authorization expiry,
+  including offline; capture never waits for server acknowledgement.
+end note
+@enduml

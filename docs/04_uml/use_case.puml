@@ -1,0 +1,91 @@
+' docs/04_uml/use_case.puml
+@startuml
+title Examory - Use cases
+left to right direction
+skinparam packageStyle rectangle
+actor Student
+actor Teacher
+actor Admin
+actor "ML Services" as ML
+
+rectangle Examory {
+  package "LMS core" {
+    usecase "Sign in and access authorized resources" as SignIn
+    usecase "Manage users, groups and roles" as Users
+    usecase "Manage courses, modules and materials" as Courses
+    usecase "View materials and progress" as Materials
+    usecase "Configure assignments, quizzes,\nQuestion bank, Variant and Rubric" as Assessment
+    usecase "Upload files and submit assignments" as Submit
+    usecase "Take quizzes" as Quiz
+    usecase "Assign grades and feedback" as Grade
+    usecase "View own grades and notifications" as Results
+  }
+  package "Academic integrity" {
+    usecase "Check text and code submissions\nand report explained risk signals" as Integrity
+    usecase "Review evidence and confirm/dismiss risk\n(risk.reviewed)" as Review
+  }
+  package "Personalized analytics" {
+    usecase "View weak topics and recommended materials\n(analytics.recommendation)" as Recommendation
+    usecase "View group performance and students at risk\n(analytics.group_risk)" as GroupRisk
+    usecase "Review rubric-based grade suggestion\n(analytics.grade_suggestion)" as Suggestion
+  }
+  package "Anomaly detection" {
+    usecase "Report behavioral anomalies\n(risk.behavior_anomaly)" as Anomaly
+    usecase "Flag suspected test variant leakage\n(risk.variant_leak)" as Leakage
+  }
+  package "Proctoring and exam sessions" {
+    usecase "Configure exam session and\nconsent information" as ConfigureExam
+    usecase "Provide separate webcam and agent consent" as Consent
+    usecase "Start, take and end an exam" as Exam
+    usecase "Collect authorized webcam and Windows\nclient agent signals" as Capture
+    usecase "Report explained proctoring risks\n(risk.proctoring)" as Proctoring
+    usecase "Withdraw consent and stop capture" as Withdraw
+  }
+  usecase "Configure retention, access\nand audit policies" as Policies
+}
+
+Student --> SignIn
+Teacher --> SignIn
+Admin --> SignIn
+Admin --> Users
+Admin --> Policies
+Teacher --> Courses
+Teacher --> Assessment
+Student --> Materials
+Student --> Submit
+Student --> Quiz
+Student --> Results
+Teacher --> Grade
+Teacher --> Review
+Student --> Recommendation
+Teacher --> GroupRisk
+Teacher --> Suggestion
+Teacher --> Leakage
+Teacher --> ConfigureExam
+Student --> Consent
+Student --> Exam
+Student --> Withdraw
+ML --> Integrity
+ML --> Recommendation
+ML --> GroupRisk
+ML --> Suggestion
+ML --> Anomaly
+ML --> Leakage
+ML --> Proctoring
+Exam .> Consent : <<include>>
+Exam .> Capture : <<include>>
+
+note bottom of Review
+  grading stores risk signals beside the target work.
+  Only the authorized Teacher makes an academic decision.
+  A signal or accepted suggestion never assigns a penalty.
+end note
+note bottom of Capture
+  Collection starts only after consent is recorded.
+  Withdrawal or exam end stops collection.
+end note
+note bottom of ML
+  Secondary actor for external analytics and ML outputs;
+  model internals are outside this specification.
+end note
+@enduml

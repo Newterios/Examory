@@ -1,0 +1,72 @@
+' docs/04_uml/seq_quiz_anomaly.puml
+@startuml
+title Examory - Quiz attempt and anomaly review
+actor Student
+boundary Web
+participant quizzes
+queue Kafka
+participant "ML anomaly" as Anomaly
+participant grading
+actor Teacher
+
+note over Web, grading
+  Authenticated APIs use Nginx (omitted).
+  Events use the brief's common envelope; quiz events use lms.quizzes.
+  Additional interaction details are proposed contracts.
+end note
+Student -> Web : Start quiz
+Web -> quizzes : Create authorized Attempt and assign Variant
+quizzes --> Web : attempt_id, variant_id, questions, time limit
+quizzes -> Kafka : quiz.started
+note right of Kafka
+  Payload: attempt_id, quiz_id, variant_id,
+  question_count, time_limit_sec.
+end note
+Kafka -> Anomaly : quiz.started
+loop Each saved answer or answer change
+  Student -> Web : Answer Question
+  Web -> quizzes : Save Answer for Attempt
+  quizzes --> Web : Answer saved
+  quizzes -> Kafka : quiz.answered
+  note right of Kafka
+    Payload: attempt_id, question_id, question_index,
+    time_since_shown_ms, is_change.
+  end note
+  Kafka -> Anomaly : quiz.answered
+end
+alt Student submits before timeout
+  Student -> Web : Submit quiz
+  Web -> quizzes : Finalize Attempt once
+else Server-controlled time limit expires
+  quizzes -> quizzes : Finalize Attempt once using saved Answers
+end
+quizzes --> Web : Accepted attempt_id and completion status
+Web --> Student : Attempt submitted
+quizzes -> Kafka : quiz.submitted
+note right of Kafka
+  Payload: attempt_id, variant_id, score, max_score, duration_ms.
+end note
+Kafka -> Anomaly : quiz.submitted
+alt Anomaly evaluation reports a risk
+  Anomaly -> Kafka : risk.behavior_anomaly
+  note right of Anomaly
+    Payload: risk_id, target_id = attempt_id,
+    score, level, explanation, evidence.
+  end note
+  Kafka -> grading : risk.behavior_anomaly
+  grading -> grading : Store risk beside Attempt; status = pending
+  Teacher -> Web : Inspect Attempt and risk
+  Web -> grading : Read authorized risk evidence
+  grading --> Web : Explanation, evidence and status
+  Web --> Teacher : Show review controls
+  Teacher -> Web : Confirm or dismiss with reason
+  Web -> grading : Save Teacher review
+  grading -> Kafka : risk.reviewed
+  grading --> Web : Review saved
+else No risk or delayed/unavailable evaluation
+  note over quizzes, grading
+    Saved answers and submitted Attempt remain valid.
+    No risk score automatically changes a grade or imposes a penalty.
+  end note
+end
+@enduml

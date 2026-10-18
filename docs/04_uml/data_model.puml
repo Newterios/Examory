@@ -1,0 +1,231 @@
+' docs/04_uml/data_model.puml
+@startuml
+title Examory - Conceptual data model
+hide methods
+skinparam classAttributeIconSize 0
+
+class User {
+  user_id: UUID
+  roles: student | teacher | admin [1..*]
+  display_name: String
+  email: String
+  status: String
+}
+class Group {
+  group_id: UUID
+  name: String
+}
+class Course {
+  course_id: UUID
+  teacher_id: UUID
+  title: String
+  status: String
+  ended_at: Timestamp?
+}
+class Module {
+  module_id: UUID
+  course_id: UUID
+  title: String
+  position: Integer
+}
+class Material {
+  material_id: UUID
+  module_id: UUID
+  title: String
+  topic_ids: UUID[]
+  file_ref: String?
+}
+class Assignment {
+  assignment_id: UUID
+  module_id: UUID
+  rubric_id: UUID?
+  title: String
+  kind: String
+  deadline_at: Timestamp
+  max_grade: Decimal
+}
+class Submission {
+  submission_id: UUID
+  assignment_id: UUID
+  student_id: UUID
+  attempt: Integer
+  kind: String
+  files: String[]
+  submitted_at: Timestamp
+  status: String
+}
+class Quiz {
+  quiz_id: UUID
+  module_id: UUID
+  rubric_id: UUID?
+  title: String
+  time_limit_sec: Integer
+  max_attempts: Integer
+  scoring_version: Integer
+  pass_threshold: Decimal
+}
+class Question {
+  question_id: UUID
+  version: Integer
+  course_id: UUID
+  topic_id: UUID
+  prompt: String
+  kind: String
+  max_score: Decimal
+}
+class Variant {
+  variant_id: UUID
+  version: Integer
+  quiz_id: UUID
+  label: String
+  question_ids: UUID[]
+  question_count: Integer
+}
+class Attempt {
+  attempt_id: UUID
+  quiz_id: UUID
+  variant_id: UUID
+  student_id: UUID
+  session_id: UUID?
+  started_at: Timestamp
+  submitted_at: Timestamp?
+  duration_ms: Integer?
+  score: Decimal?
+  max_score: Decimal
+  status: String
+}
+class Answer {
+  answer_id: UUID
+  attempt_id: UUID
+  question_id: UUID
+  question_index: Integer
+  response: String
+  time_since_shown_ms: Integer
+  is_change: Boolean
+  answered_at: Timestamp
+  awarded_score: Decimal?
+}
+class Rubric {
+  rubric_id: UUID
+  version: Integer
+  title: String
+  criteria: JSON
+  max_grade: Decimal
+}
+class Grade {
+  grade_id: UUID
+  target_id: UUID
+  target_type: Submission | Attempt
+  teacher_id: UUID
+  rubric_id: UUID?
+  rubric_version: Integer?
+  grade: Decimal
+  max_grade: Decimal
+  rubric_scores: JSON
+  feedback: String
+  assigned_at: Timestamp
+}
+class RiskSignal {
+  risk_id: UUID
+  target_id: UUID
+  target_type: Submission | Attempt | ExamSession | Variant
+  event_type: String
+  score: Decimal
+  level: String
+  explanation: String
+  evidence: JSON
+  variant_id: UUID?
+  status: pending | confirmed | dismissed
+  reviewed_by: UUID?
+  review_reason: String?
+  reviewed_at: Timestamp?
+}
+class ExamSession {
+  session_id: UUID
+  student_id: UUID
+  course_id: UUID
+  quiz_id: UUID
+  webcam_consent: Boolean
+  agent_consent: Boolean
+  consent_version: String
+  consent_recorded_at: Timestamp?
+  consent_withdrawn_at: Timestamp?
+  started_at: Timestamp?
+  ended_at: Timestamp?
+  status: String
+}
+
+Group "0..*" -- "0..*" User : student membership
+Group "0..*" -- "0..*" Course : course access
+User "1" -- "0..*" Course : teaches
+Course "1" *-- "0..*" Module
+Module "1" *-- "0..*" Material
+Module "1" *-- "0..*" Assignment
+Module "1" *-- "0..*" Quiz
+Course "1" -- "0..*" Question : question bank
+Assignment "1" -- "0..*" Submission
+User "1" -- "0..*" Submission : submits
+Assignment "0..*" --> "0..1" Rubric
+Quiz "0..*" --> "0..1" Rubric
+Quiz "1" *-- "0..*" Variant
+Variant "0..*" -- "1..*" Question : ordered selection
+Quiz "1" -- "0..*" Attempt
+Variant "1" -- "0..*" Attempt
+User "1" -- "0..*" Attempt : takes
+Attempt "1" *-- "0..*" Answer
+Question "1" -- "0..*" Answer
+User "1" -- "0..*" Grade : assigns
+Grade "0..*" --> "0..1" Submission : target
+Grade "0..*" --> "0..1" Attempt : target
+RiskSignal "0..*" --> "0..1" Submission : target
+RiskSignal "0..*" --> "0..1" Attempt : target
+RiskSignal "0..*" --> "0..1" ExamSession : target
+RiskSignal "0..*" --> "0..1" Variant : target
+User "0..1" -- "0..*" RiskSignal : reviews
+User "1" -- "0..*" ExamSession : participates
+Course "1" -- "0..*" ExamSession
+Quiz "1" -- "0..*" ExamSession : configured assessment
+ExamSession "0..1" -- "0..*" Attempt : covers
+
+note bottom of Grade
+  Exactly one target: Submission XOR Attempt.
+  rubric_scores contains {criterion_id, score} entries.
+  Grade history is preserved; students see only released grades.
+  Suggested grades require an explicit Teacher decision.
+  rubric_id and rubric_version identify the immutable rubric snapshot.
+end note
+note bottom of RiskSignal
+  Exactly one target: Submission XOR Attempt XOR ExamSession XOR Variant.
+  reviewed_by must identify an authorized Teacher.
+  Proposed risk.variant_leak payload retains student_id, course_id,
+  kind, items[] and explanation; student_id is null for variant scope.
+  Each item contains common risk fields, target_id = variant_id,
+  quiz_id, variant_id and sample windows; grading stores each risk item.
+end note
+note bottom of ExamSession
+  A started session requires both consent flags and timestamps.
+  End or withdrawal stops collection; no automatic penalty.
+  Covered Attempts match the configured Quiz, Course and student.
+end note
+note bottom of Answer
+  One current Answer per (attempt_id, question_id).
+  Changes remain represented by quiz.answered events.
+  The Question must belong to the Attempt's Variant.
+  awarded_score is the authoritative scored-answer value;
+  null means unscored, not zero.
+end note
+note bottom of Rubric
+  criteria contains criterion_id, description and max_score.
+  Historical rubric versions are immutable.
+  This is a conceptual model across service boundaries,
+  not a shared database or an implementation specification.
+  Field types, memberships and ownership are proposed assumptions.
+end note
+note bottom of Attempt
+  Preserve the immutable assessment snapshot for completed Attempts:
+  Quiz scoring_version and pass_threshold, Variant version and
+  question order, Question versions and score bounds.
+  The Variant must belong to the Attempt's Quiz.
+  Later edits do not alter submitted answers or completed Attempt results.
+end note
+@enduml

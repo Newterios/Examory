@@ -1,0 +1,61 @@
+' docs/04_uml/seq_submission_integrity.puml
+@startuml
+title Examory - Submission and academic integrity review
+actor Student
+boundary Web
+participant files
+participant assignments
+queue Kafka
+participant "ML integrity" as Integrity
+participant grading
+actor Teacher
+
+note over Web, grading
+  API calls use authenticated, authorized access via Nginx (omitted).
+  Events use event_id, event_type, version, occurred_at, producer,
+  actor {user_id, role}, context {course_id, group_id, session_id}, payload.
+  Message details beyond the brief are proposed contracts.
+end note
+Student -> Web : Submit assignment with text/code files
+Web -> files : Upload permitted files
+files --> Web : Authorized file references
+Web -> assignments : Create Submission with file references
+assignments --> Web : Accepted submission_id and submitted_at
+Web --> Student : Submission accepted; checks pending
+assignments -> Kafka : submission.created
+note right of Kafka
+  Payload: submission_id, assignment_id, attempt,
+  kind, files, submitted_at, deadline_at.
+  Topic: lms.submissions.
+end note
+Kafka -> Integrity : submission.created
+Integrity -> files : Read authorized submission content
+files --> Integrity : Content
+alt Integrity check succeeds and produces a risk signal
+  Integrity -> Kafka : risk.plagiarism
+  note right of Integrity
+    Payload: risk_id, target_id = submission_id,
+    score, level, explanation, evidence.
+  end note
+  Kafka -> grading : risk.plagiarism
+  grading -> grading : Store risk beside Submission; status = pending
+  Teacher -> Web : Open Submission and risk evidence
+  Web -> grading : Read authorized risk and grade details
+  grading --> Web : Explanation, evidence and review status
+  Web --> Teacher : Show risk as a signal requiring review
+  Teacher -> Web : Confirm or dismiss; enter reason
+  Web -> grading : Record Teacher review
+  grading -> Kafka : risk.reviewed
+  note right of grading
+    Proposed review payload: risk_id, target_id,
+    decision, reason, reviewed_by, reviewed_at.
+    Confirm/dismiss does not automatically change a grade.
+  end note
+  grading --> Web : Review saved
+  Web --> Teacher : Updated review status
+else No risk is reported
+  note over Integrity, grading : No automatic allegation; absence of a signal is not proof of integrity.
+else Check unavailable or delayed
+  note over Web, Integrity : Accepted Submission remains valid; no automatic penalty or grade change.
+end
+@enduml
