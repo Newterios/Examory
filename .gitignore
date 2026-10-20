@@ -47,3 +47,8 @@ ml/datasets/raw/
 *.onnx
 *.pt
 *.pth
+
+# Generated datasets (keep CSV/Parquet out of the repository)
+ml/**/*.csv
+ml/**/*.parquet
+quiz_behavior.csv
