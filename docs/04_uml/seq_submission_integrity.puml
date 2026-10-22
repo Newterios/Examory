@@ -14,7 +14,7 @@ note over Web, grading
   API calls use authenticated, authorized access via Nginx (omitted).
   Events use event_id, event_type, version, occurred_at, producer,
   actor {user_id, role}, context {course_id, group_id, session_id}, payload.
-  Message details beyond the brief are proposed contracts.
+  Event payloads and topic routing follow docs/03_architecture/events.md.
 end note
 Student -> Web : Submit assignment with text/code files
 Web -> files : Upload permitted files
@@ -24,8 +24,8 @@ assignments --> Web : Accepted submission_id and submitted_at
 Web --> Student : Submission accepted; checks pending
 assignments -> Kafka : submission.created
 note right of Kafka
-  Payload: submission_id, assignment_id, attempt,
-  kind, files, submitted_at, deadline_at.
+  Payload: submission_id, assignment_id, attempt, kind,
+  language, text_ref, files, submitted_at, deadline_at.
   Topic: lms.submissions.
 end note
 Kafka -> Integrity : submission.created
@@ -34,8 +34,10 @@ files --> Integrity : Content
 alt Integrity check succeeds and produces a risk signal
   Integrity -> Kafka : risk.plagiarism
   note right of Integrity
-    Payload: risk_id, target_id = submission_id,
-    score, level, explanation, evidence.
+    Topic: ai.risk.
+    Payload: risk_id, target_type = submission,
+    target_id = submission_id, score, level,
+    model {name, version}, explanation, evidence.
   end note
   Kafka -> grading : risk.plagiarism
   grading -> grading : Store risk beside Submission; status = pending
@@ -47,9 +49,10 @@ alt Integrity check succeeds and produces a risk signal
   Web -> grading : Record Teacher review
   grading -> Kafka : risk.reviewed
   note right of grading
-    Proposed review payload: risk_id, target_id,
-    decision, reason, reviewed_by, reviewed_at.
-    Confirm/dismiss does not automatically change a grade.
+    Topic: lms.grades.
+    Payload: risk_id, target_type, target_id,
+    decision = confirmed | dismissed, reviewed_by, comment.
+    Review does not automatically change a grade.
   end note
   grading --> Web : Review saved
   Web --> Teacher : Updated review status

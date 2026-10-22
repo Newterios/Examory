@@ -11,16 +11,16 @@ actor Teacher
 
 note over Web, grading
   Authenticated APIs use Nginx (omitted).
-  Events use the brief's common envelope; quiz events use lms.quizzes.
-  Additional interaction details are proposed contracts.
+  Events use the common envelope and payloads in docs/03_architecture/events.md.
 end note
 Student -> Web : Start quiz
 Web -> quizzes : Create authorized Attempt and assign Variant
 quizzes --> Web : attempt_id, variant_id, questions, time limit
 quizzes -> Kafka : quiz.started
 note right of Kafka
+  Topic: lms.quizzes.
   Payload: attempt_id, quiz_id, variant_id,
-  question_count, time_limit_sec.
+  question_count, time_limit_sec, exam_session_id.
 end note
 Kafka -> Anomaly : quiz.started
 loop Each saved answer or answer change
@@ -29,8 +29,10 @@ loop Each saved answer or answer change
   quizzes --> Web : Answer saved
   quizzes -> Kafka : quiz.answered
   note right of Kafka
+    Topic: lms.quizzes.
     Payload: attempt_id, question_id, question_index,
-    time_since_shown_ms, is_change.
+    answer_hash, is_change, time_since_shown_ms,
+    time_since_attempt_start_ms.
   end note
   Kafka -> Anomaly : quiz.answered
 end
@@ -44,14 +46,18 @@ quizzes --> Web : Accepted attempt_id and completion status
 Web --> Student : Attempt submitted
 quizzes -> Kafka : quiz.submitted
 note right of Kafka
-  Payload: attempt_id, variant_id, score, max_score, duration_ms.
+  Topic: lms.quizzes.
+  Payload: attempt_id, quiz_id, variant_id, score,
+  max_score, duration_ms, answers_changed.
 end note
 Kafka -> Anomaly : quiz.submitted
 alt Anomaly evaluation reports a risk
   Anomaly -> Kafka : risk.behavior_anomaly
   note right of Anomaly
-    Payload: risk_id, target_id = attempt_id,
-    score, level, explanation, evidence.
+    Topic: ai.risk.
+    Payload: risk_id, target_type = attempt,
+    target_id = attempt_id, score, level,
+    model {name, version}, explanation, evidence.
   end note
   Kafka -> grading : risk.behavior_anomaly
   grading -> grading : Store risk beside Attempt; status = pending
@@ -62,6 +68,11 @@ alt Anomaly evaluation reports a risk
   Teacher -> Web : Confirm or dismiss with reason
   Web -> grading : Save Teacher review
   grading -> Kafka : risk.reviewed
+  note right of grading
+    Topic: lms.grades.
+    Payload: risk_id, target_type, target_id,
+    decision = confirmed | dismissed, reviewed_by, comment.
+  end note
   grading --> Web : Review saved
 else No risk or delayed/unavailable evaluation
   note over quizzes, grading

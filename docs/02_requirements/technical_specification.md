@@ -69,7 +69,7 @@ Released review outcomes may be visible to the affected student without exposing
 |---|---|---|
 | FR-21 | must | Authorized ML integrity processing shall receive `submission.created` and access only the referenced text or code needed for that submission. |
 | FR-22 | must | `grading` shall consume `risk.plagiarism` and persist the supplied risk identifier, target, score, level, explanation, and evidence beside the corresponding work. |
-| FR-23 | should | Supported AI-generated-text indications shall appear as a distinct explained `risk.*` category; no unprovided event type is prescribed here. |
+| FR-23 | should | Supported AI-generated-text indications shall appear as distinct explained `risk.ai_generated` signals. |
 | FR-24 | must | Teachers shall inspect risk category, severity, explanation, relevant excerpts or evidence links, processing time, and review state for their assigned cases. |
 | FR-25 | must | A teacher shall confirm or dismiss a signal with a reason; `grading` shall record reviewer and timestamp and publish `risk.reviewed`. |
 | FR-26 | must | Neither receipt nor confirmation of a risk signal shall automatically change a grade, impose a penalty, or declare misconduct; any academic action requires a separate teacher decision. |
@@ -121,24 +121,35 @@ Released review outcomes may be visible to the affected student without exposing
 
 ## 4. Event and data contract boundaries
 
-Every event uses `event_id`, `event_type`, `version`, `occurred_at`, `producer`, `actor {user_id, role}`, `context {course_id, group_id, session_id}`, and `payload`. Store timestamps in UTC; display deadlines and time windows in the selected institutional timezone, initially `Asia/Qyzylorda`. Optional context identifiers may be null when inapplicable (assumption). Event types and Kafka topics are different identifiers.
+Every event uses `event_id`, `event_type`, `version`, `occurred_at`, `producer`, `actor {user_id, role}`, `context {course_id, group_id, session_id}`, and `payload`. Store timestamps in UTC; display deadlines and time windows in the selected institutional timezone, initially `Asia/Almaty` (Astana). Context identifiers are optional when inapplicable. Event types and Kafka topics are different identifiers.
 
-| Event | Required payload from the brief / interface use |
+| Event | Payload defined in `docs/03_architecture/events.md` |
 |---|---|
 | `material.viewed` | `material_id`, `module_id`, `view_duration_ms`, `completed` |
-| `submission.created` | `submission_id`, `assignment_id`, `attempt`, `kind`, `files`, `submitted_at`, `deadline_at` |
-| `quiz.started` | `attempt_id`, `quiz_id`, `variant_id`, `question_count`, `time_limit_sec` |
-| `quiz.answered` | `attempt_id`, `question_id`, `question_index`, `time_since_shown_ms`, `is_change` |
-| `quiz.submitted` | `attempt_id`, `variant_id`, `score`, `max_score`, `duration_ms` |
-| `grade.assigned` | `target_id`, `grade`, `max_grade`, `rubric_scores[{criterion_id, score}]` |
-| ML `risk.*` | `risk_id`, `target_id`, `score`, `level`, `explanation`, `evidence` |
-| `analytics.recommendation`, `analytics.group_risk`, `analytics.grade_suggestion`, `risk.variant_leak` | `student_id`, `course_id`, `kind`, `items[]`, `explanation` |
-| `risk.reviewed` | Proposed: `risk_id`, `target_id`, decision `confirm` or `dismiss`, reason, reviewer identifier, review time. This is a review event, not the ML risk payload above. |
-| `exam.started`, `exam.agent_signal`, `exam.ended` | Names are fixed by the brief; consent reference, session correlation, observation metadata, and ending reason are proposed contract details. |
+| `submission.created` | `submission_id`, `assignment_id`, `attempt`, `kind`, `language`, `text_ref`, `files[{file_id, name, size, sha256}]`, `submitted_at`, `deadline_at` |
+| `quiz.started` | `attempt_id`, `quiz_id`, `variant_id`, `question_count`, `time_limit_sec`, `exam_session_id` (`null` when inapplicable) |
+| `quiz.answered` | `attempt_id`, `question_id`, `question_index`, `answer_hash`, `is_change`, `time_since_shown_ms`, `time_since_attempt_start_ms` |
+| `quiz.submitted` | `attempt_id`, `quiz_id`, `variant_id`, `score`, `max_score`, `duration_ms`, `answers_changed` |
+| `grade.assigned` | `target_type` (`submission` or `attempt`), `target_id`, `grade`, `max_grade`, optional `rubric_id`, optional `rubric_version`, `rubric_scores[{criterion_id, score}]`, `graded_by` |
+| ML `risk.*`, including `risk.variant_leak` | `risk_id`, `target_type` (`submission`, `attempt`, `exam_session`, or `variant`), `target_id`, `score`, `level`, `model{name, version}`, `explanation`, `evidence` |
+| `analytics.recommendation`, `analytics.group_risk`, `analytics.grade_suggestion` | `student_id`, `course_id`, `kind`, `items[]`, `explanation` |
+| `risk.reviewed` | `risk_id`, `target_type`, `target_id`, `decision` (`confirmed` or `dismissed`), `reviewed_by`, `comment`. This review event is distinct from the ML risk payload above. |
+| `exam.started` | `exam_session_id`, `attempt_id`, `consent{webcam, agent, consent_version, given_at}` |
+| `exam.ended` | `exam_session_id`, `attempt_id`, `reason` (`completed`, `timeout`, `withdrawn`, or `interrupted`), `ended_at`, `video_ref` |
+| `exam.agent_signal` | `exam_session_id`, `signal`, `details`, `confidence` |
 
-The brief does not supply `architecture.md` or `events.md` in this workspace. Routing is assumed as follows: quiz events to `lms.quizzes`, submissions to `lms.submissions`, grades to `lms.grades`, material views to `lms.courses`. Risk, analytics, and exam topic names remain unspecified; diagrams label their event types without inventing topics. Consumers resolve missing quiz/course/topic metadata through authorized source-service reads.
+| Kafka topic | Event types |
+|---|---|
+| `lms.users` | `user.created`, `user.logged_in`, `user.logged_out`, `group.updated` |
+| `lms.courses` | `course.created`, `course.updated`, `material.viewed`, `assignment.published` |
+| `lms.submissions` | `submission.created`, `submission.updated`, `file.uploaded` |
+| `lms.quizzes` | `quiz.started`, `quiz.answered`, `quiz.submitted` |
+| `lms.grades` | `grade.assigned`, `risk.reviewed` |
+| `lms.exams` | `exam.started`, `exam.ended`, `exam.agent_signal`, `client.focus_lost`, `client.tab_switched`, `client.paste` |
+| `ai.risk` | `risk.plagiarism`, `risk.ai_generated`, `risk.behavior_anomaly`, `risk.proctoring`, `risk.variant_leak` |
+| `ai.analytics` | `analytics.recommendation`, `analytics.group_risk`, `analytics.grade_suggestion` |
 
-The four analytics outputs retain the shared payload above. Proposed `items[]` contents are accessible material references for recommendations; student identifiers and support metrics for group risk; target identifier, rubric version, criterion scores, and total for grade suggestions; and `risk_id`, `target_id` equal to `variant_id`, `score`, `level`, `explanation`, `evidence`, `quiz_id`, and comparison windows for variant leakage. `student_id` is null for group or variant outputs. `grading` normalizes each variant risk item into a `RiskSignal`. These nested fields, nullability, and normalization are assumptions, not previously agreed schemas.
+Consumers resolve missing quiz, course, and topic metadata through authorized source-service reads. The `items[]` structure by `kind` and `student_id = null` for group-scoped outputs are defined in `docs/03_architecture/events.md` §4.
 
 A `Grade` targets exactly one `Submission` or `Attempt`. A `RiskSignal` targets exactly one `Submission`, `Attempt`, `ExamSession`, or `Variant`; variant signals describe a population pattern, not an accusation against every participant. Course and group permissions apply to all linked evidence. Rubric versions and assessment scoring definitions remain traceable after edits. The class diagram is a logical cross-service model, not a shared-database design.
 
@@ -196,7 +207,8 @@ An active appeal may justify a specifically authorized hold with an owner, reaso
 - A learning-support candidate initially means a mean normalized quiz score <60% across at least 3 distinct quizzes, or at least 2 overdue required assignments. This designation is separate from misconduct risk.
 - Variant comparison uses the latest eligible completed attempt per student per window, a recent 7-day window and the preceding 30-day baseline, the configured quiz pass threshold, and at least 10 distinct students per window. A rise of at least 20 percentage points creates a review candidate. Recent-window students are excluded from baseline membership to avoid overlapping cohorts; counts are recomputed. Quiz/variant/scoring versions must match. Thresholds are configurable and are not a validated detector.
 - Deadline catalogs, rosters, rubric definitions, scored answers, and question-topic mappings come from scoped source-service reads because the listed events do not contain all required fields. No additional canonical event names are invented.
-- Uploads initially allow PDF, TXT, and ZIP up to 20 MB; exact allowed code archive content is configured per assignment. Dates use UTC storage and initial `Asia/Qyzylorda` display. Measurement targets, retention periods, and nested output fields are proposed defaults.
+- The `quiz.answered` counting conventions are fixed in `docs/03_architecture/events.md` §3: `question_index` is zero-based, `time_since_shown_ms` is cumulative since first display, and `quiz.submitted.answers_changed` counts events with `is_change = true`.
+- Uploads initially allow PDF, TXT, and ZIP up to 20 MB; exact allowed code archive content is configured per assignment. Dates use UTC storage and initial `Asia/Almaty` (Astana) display. Measurement targets and retention periods are proposed defaults.
 
 ## 7. Acceptance criteria for MVP
 
@@ -212,7 +224,7 @@ Acceptance uses synthetic or consented test data, two independent courses/groups
 | AC-6 | FR-29–FR-34, FR-39 | Student dashboard shows fixture-verified progress, normalized score trend, weak topics, accessible recommendations, and current deadlines. Missing scores or topic mappings display insufficient data. Replay and delayed delivery leave the same aggregates. |
 | AC-7 | FR-35–FR-36 | Teacher filters the assigned group, sees correct completion/performance counts and explained learning-support candidates from `analytics.group_risk`, and cannot access the other group's individual records. |
 | AC-8 | FR-41–FR-42, FR-45 | A supplied behavior anomaly from quiz events appears beside its attempt in `grading` and follows the same teacher review workflow. No signal or service timeout is not represented as proof of integrity. |
-| AC-9 | FR-43–FR-45 | A synthetic comparable variant cohort meeting sample and rate-rise thresholds produces `risk.variant_leak`; a small sample and a changed scoring version do not. Evidence shows both windows/counts and permits teacher confirm/dismiss. |
+| AC-9 | FR-43–FR-45 | A synthetic comparable variant cohort meeting sample and rate-rise thresholds produces `risk.variant_leak`; a small sample and a changed scoring version do not. Evidence shows both windows/counts and permits a teacher decision of `confirmed` or `dismissed`. |
 | AC-10 | FR-47–FR-52 | Refused consent produces no capture and no `exam.started`. With recorded consent and readiness, the session emits `exam.started`, correlated `exam.agent_signal`, and a supplied `risk.proctoring` is reviewable in `grading`. |
 | AC-11 | FR-53–FR-55; NFR-8 | Normal end, timeout, and withdrawal each stop webcam and client agent capture and produce one logical `exam.ended`; later capture is rejected. A disconnect is visible, saved answers survive, and no automatic failing grade is created. |
 | AC-12 | NFR-1–NFR-4, NFR-6–NFR-7, NFR-9–NFR-16 | Recorded load, authorization, upload/link-expiry, retention, replay, restore, audit, and usability checks meet the stated targets. ML unavailability preserves submission/quiz workflows and shows pending results. |

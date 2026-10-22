@@ -13,9 +13,9 @@ participant grading
 actor Teacher
 
 note over Web, grading
-  Authenticated APIs use Nginx (omitted). Events use the common envelope.
-  exam.* payload fields and webcam transport are not specified in the brief;
-  this sequence proposes authorized evidence references, not raw video in Kafka.
+  Authenticated APIs use Nginx (omitted). Event payloads and topics
+  follow docs/03_architecture/events.md; webcam transport is unspecified.
+  Raw video is not embedded in Kafka events.
 end note
 Student -> Web : Request exam
 Web -> Exam : Read session details and consent notice
@@ -33,46 +33,59 @@ alt Both required consents granted
     Web --> Student : Explain failed check and recovery action; no capture
   end
   Web -> Exam : Start ready, consented session
-  Exam --> Web : session_id and active session status
+  Exam --> Web : exam_session_id and active session status
   Exam -> Kafka : exam.started
   note right of Kafka
-    Proposed payload: session_id, webcam_consent,
-    agent_consent, consent_version, consent_recorded_at.
+    Topic: lms.exams.
+    Payload: exam_session_id, attempt_id,
+    consent {webcam, agent, consent_version, given_at}.
   end note
   Kafka -> Proctoring : exam.started
-  Web -> Webcam : Start authorized capture for session_id
+  Web -> Webcam : Start authorized capture for exam_session_id
   Web -> Agent : Start authorized session monitoring
   loop While ExamSession is active and consent remains valid
     Webcam -> Web : Consented webcam observations
-    Web -> Collector : Authorized webcam evidence reference + session_id
-    Agent -> Collector : Client signal with session_id and capture timestamp
+    Web -> Collector : Authorized webcam evidence reference + exam_session_id
+    Agent -> Collector : Client signal with exam_session_id
     Collector -> Kafka : exam.agent_signal (authorized signal/evidence references)
+    note right of Kafka
+      Topic: lms.exams.
+      Payload: exam_session_id, signal, details, confidence.
+    end note
     Kafka -> Proctoring : exam.agent_signal
     opt Proctoring evaluation reports a risk
       Proctoring -> Kafka : risk.proctoring
       note right of Proctoring
-        Payload: risk_id, target_id = session_id,
-        score, level, explanation, evidence.
+        Topic: ai.risk.
+        Payload: risk_id, target_type = exam_session,
+        target_id = exam_session_id, score, level,
+        model {name, version}, explanation, evidence.
       end note
       Kafka -> grading : risk.proctoring
       grading -> grading : Store risk beside ExamSession; status = pending
     end
   end
   alt Student completes exam
-    Web -> Exam : End ExamSession
+    Web -> Exam : End ExamSession (reason = completed)
   else Server-controlled session time expires
-    Exam -> Exam : End ExamSession once
+    Exam -> Exam : End ExamSession once (reason = timeout)
   else Student withdraws either consent
     Student -> Web : Withdraw consent and stop monitoring
     Web -> Webcam : Stop capture immediately
     Web -> Agent : Stop collection immediately
-    Web -> Exam : Record withdrawal; end ExamSession
+    Web -> Exam : Record withdrawal; end ExamSession (reason = withdrawn)
   end
   Exam --> Web : Closed session status
   Web -> Webcam : Ensure capture is stopped
   Web -> Agent : Ensure collection is stopped
   Exam -> Collector : Reject further collection for closed session
   Exam -> Kafka : exam.ended
+  note right of Kafka
+    Topic: lms.exams.
+    Payload: exam_session_id, attempt_id,
+    reason = completed | timeout | withdrawn | interrupted,
+    ended_at, video_ref.
+  end note
   Kafka -> Proctoring : exam.ended; stop session processing
   Web --> Student : Session ended; show completion or withdrawal status
   opt Pending proctoring signals exist
@@ -83,6 +96,11 @@ alt Both required consents granted
     Teacher -> Web : Confirm or dismiss with reason
     Web -> grading : Save Teacher review
     grading -> Kafka : risk.reviewed
+    note right of grading
+      Topic: lms.grades.
+      Payload: risk_id, target_type, target_id,
+      decision = confirmed | dismissed, reviewed_by, comment.
+    end note
     grading --> Web : Review saved
   end
 else Either required consent declined
