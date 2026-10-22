@@ -1,12 +1,28 @@
 # Examory UX mockups (LMS-23)
 
-The [editable Figma file](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X) contains four desktop mockups for the key Examory scenarios. The screens use synthetic names and results and follow [the dashboard specification](dashboards_spec.md) and the [v0.2 event contract](../../03_architecture/events.md).
+The [Figma file](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X) contains the earlier four desktop screens. The latest student revision below follows the 23 October 2026 brief: a restrained course Summary focused on the next lesson, deadlines and weak topics, with a 375 px mobile layout. It uses fictional learning data for **Algorithms and Data Structures**.
 
-| Screen | Figma frame | PNG export | Scenario |
+## Latest student revision
+
+These PNGs were rendered locally from the accompanying SVGs. **They are not Figma exports and are not yet synced to the Figma file**: MCP tool access is currently quota-limited, and the available browser account has view access. The SVGs retain text and vector shapes; use Geist when editing them. Native Figma components and Auto Layout still require a Figma editing session.
+
+| Artifact | PNG | Editable SVG | Dimensions |
 |---|---|---|---|
-| Student dashboard | [Open frame](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X?node-id=3-2) | [student_dashboard.png](student_dashboard.png) | Review progress, weak topics, recommendations, deadlines, grades, and exam readiness. |
-| Teacher dashboard | [Open frame](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X?node-id=3-3) | [teacher_dashboard.png](teacher_dashboard.png) | See group performance, learning-support needs, pending risk reviews, rubric suggestions, and variant comparison. |
-| Risk review | [Open frame](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X?node-id=3-4) | [risk_review.png](risk_review.png) | Inspect evidence and enter a rationale before confirming or dismissing a signal. The decision is a human review, not a grade or sanction. |
-| Proctoring consent | [Open frame](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X?node-id=3-5) | [proctoring_consent.png](proctoring_consent.png) | Read the monitoring disclosure, make separate webcam and client-agent choices, or request an alternative. |
+| Student desktop Summary | [Preview](student_dashboard.png) | [SVG](student_dashboard.svg) | 1440 × 900 |
+| Student mobile Summary | [Preview](student_dashboard_mobile.png) | [SVG](student_dashboard_mobile.svg) | 375 × 1512 |
+| Hover, focus-visible and disabled states | [Preview](student_interaction_states.png) | [SVG](student_interaction_states.svg) | 1040 × 568 |
 
-The PNGs are 1440 × 900 exports of the Figma frames. They are static review artifacts; controls illustrate intended interactions and states. The consent screen shows both options unchecked and the continue action disabled. The risk review screen labels the score as a relative ranking, and its buttons correspond to `risk.reviewed` decisions `confirmed` and `dismissed`.
+See [student design tokens](student_design_tokens.md) for colors, type, spacing, radii, grid and interaction specifications. Grades and exam details are reached through tabs; Summary presents Next up, Deadlines and Needs attention. Dates use local Kazakhstan time without a location selector. Static mockups specify intended interaction; they do not demonstrate working accessibility behavior.
+
+## Earlier screens
+
+These assets remain from the earlier iteration and have not received the latest student visual treatment. Use [dashboards_spec.md](dashboards_spec.md) for functional requirements and [events.md](../../03_architecture/events.md) for event semantics.
+
+| Screen | Figma frame | Earlier PNG |
+|---|---|---|
+| Student dashboard before this revision | [Open frame](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X?node-id=3-2) | Replaced by the local Summary preview above |
+| Teacher dashboard | [Open frame](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X?node-id=3-3) | [teacher_dashboard.png](teacher_dashboard.png) |
+| Risk review | [Open frame](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X?node-id=3-4) | [risk_review.png](risk_review.png) |
+| Proctoring consent | [Open frame](https://www.figma.com/design/pVvqrcp7g2E0mAeFVAEz7X?node-id=3-5) | [proctoring_consent.png](proctoring_consent.png) |
+
+The three earlier PNGs are 1440 × 900. Risk review remains a human decision, separate from grading or sanctions; buttons correspond to `risk.reviewed` decisions `confirmed` and `dismissed`. The consent mockup presents separate webcam and agent choices.

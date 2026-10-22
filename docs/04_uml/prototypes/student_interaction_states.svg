@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="568" viewBox="0 0 1040 568"><title>Examory interaction states</title><desc>Examory student interface. Synthetic learning data. All local times use Kazakhstan time.</desc>
+<rect x="0" y="0" width="1040" height="568" rx="0" fill="#FAFAFB"/>
+<text x="24" y="46" font-family="Geist" font-size="22" font-weight="600" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Interaction states</text>
+<text x="24" y="77" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Static reference · keyboard focus is separate from selection</text>
+<text x="216" y="125" font-family="Geist" font-size="13" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Default</text>
+<text x="416" y="125" font-family="Geist" font-size="13" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Hover</text>
+<text x="616" y="125" font-family="Geist" font-size="13" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Focus-visible</text>
+<text x="816" y="125" font-family="Geist" font-size="13" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Disabled</text>
+<text x="24" y="199" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Navigation</text>
+<text x="24" y="287" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Tab</text>
+<text x="24" y="375" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Button</text>
+<text x="24" y="463" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Link</text>
+<rect x="200" y="168" width="176" height="48" rx="4" fill="#EEF1F6"/>
+<rect x="200" y="168" width="2" height="48" rx="0" fill="#1F3A5F"/>
+<g transform="translate(216 183) scale(0.75)" fill="none" stroke="#1F3A5F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></g>
+<text x="248" y="196" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Overview</text>
+<text x="216" y="284" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Summary</text>
+<rect x="216" y="303" width="72" height="2" rx="0" fill="#1F3A5F"/>
+<rect x="200" y="344" width="160" height="40" rx="6" fill="#1F3A5F"/>
+<text x="280" y="369" font-family="Geist" font-size="15" font-weight="500" fill="#FFFFFF" text-anchor="middle" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Resume lesson</text>
+<text x="216" y="457" font-family="Geist" font-size="13" font-weight="500" fill="#1F3A5F" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">View assignments</text>
+<rect x="400" y="168" width="176" height="48" rx="4" fill="#E3E6EC"/>
+<g transform="translate(416 183) scale(0.75)" fill="none" stroke="#5B6472" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></g>
+<text x="448" y="196" font-family="Geist" font-size="15" font-weight="400" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Overview</text>
+<rect x="400" y="256" width="176" height="48" rx="0" fill="#EEF1F6"/>
+<text x="416" y="284" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Summary</text>
+<rect x="400" y="344" width="160" height="40" rx="6" fill="#182E4C"/>
+<text x="480" y="369" font-family="Geist" font-size="15" font-weight="500" fill="#FFFFFF" text-anchor="middle" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Resume lesson</text>
+<text x="416" y="457" font-family="Geist" font-size="13" font-weight="500" fill="#1F3A5F" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">View assignments</text>
+<path d="M416 463H526" fill="none" stroke="#1F3A5F" stroke-width="1"/>
+<rect x="597" y="165" width="182" height="54" rx="6" fill="none" stroke="#1F3A5F" stroke-width="2"/>
+<g transform="translate(616 183) scale(0.75)" fill="none" stroke="#5B6472" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></g>
+<text x="648" y="196" font-family="Geist" font-size="15" font-weight="400" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Overview</text>
+<rect x="597" y="253" width="182" height="54" rx="2" fill="none" stroke="#1F3A5F" stroke-width="2"/>
+<text x="616" y="284" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Summary</text>
+<rect x="597" y="341" width="166" height="46" rx="9" fill="none" stroke="#1F3A5F" stroke-width="2"/>
+<rect x="600" y="344" width="160" height="40" rx="6" fill="#1F3A5F"/>
+<text x="680" y="369" font-family="Geist" font-size="15" font-weight="500" fill="#FFFFFF" text-anchor="middle" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Resume lesson</text>
+<text x="616" y="457" font-family="Geist" font-size="13" font-weight="500" fill="#1F3A5F" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">View assignments</text>
+<rect x="613" y="441" width="116" height="26" rx="2" fill="none" stroke="#1F3A5F" stroke-width="2"/>
+<g transform="translate(816 183) scale(0.75)" fill="none" stroke="#5B6472" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></g>
+<text x="848" y="196" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Overview</text>
+<text x="816" y="284" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Summary</text>
+<rect x="800" y="344" width="160" height="40" rx="6" fill="#EEF1F6"/>
+<text x="880" y="369" font-family="Geist" font-size="15" font-weight="500" fill="#5B6472" text-anchor="middle" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Resume lesson</text>
+<text x="816" y="457" font-family="Geist" font-size="13" font-weight="500" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">View assignments</text>
+<text x="24" y="525" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Mobile: 48px targets. Disabled controls do not activate or receive keyboard focus.</text></svg>

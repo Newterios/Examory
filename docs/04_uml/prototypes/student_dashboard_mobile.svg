@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="375" height="1512" viewBox="0 0 375 1512"><title>Algorithms and Data Structures — mobile Summary</title><desc>Examory student interface. Synthetic learning data. All local times use Kazakhstan time.</desc>
+<rect x="0" y="0" width="375" height="1512" rx="0" fill="#FAFAFB"/>
+<rect x="0" y="0" width="375" height="64" rx="0" fill="#FFFFFF"/>
+<path d="M0 63.5H375" fill="none" stroke="#E3E6EC" stroke-width="1"/>
+<text x="16" y="38" font-family="Geist" font-size="22" font-weight="600" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">examory</text>
+<g transform="translate(335 23) scale(0.75)" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></g>
+<text x="16" y="124" font-family="Geist" font-size="28" font-weight="600" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Algorithms and</text>
+<text x="16" y="156" font-family="Geist" font-size="28" font-weight="600" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Data Structures</text>
+<text x="16" y="191" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Semester 3 · SE-2301</text>
+<path d="M16 256H359" fill="none" stroke="#E3E6EC" stroke-width="1"/>
+<text x="24" y="236" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Summary</text>
+<rect x="16" y="255" width="76" height="2" rx="0" fill="#1F3A5F"/>
+<text x="116" y="236" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Progress</text>
+<text x="204" y="236" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Grades</text>
+<text x="284" y="236" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Exam</text>
+<rect x="16" y="280" width="343" height="368" rx="8" fill="#FFFFFF" stroke="#E3E6EC" stroke-width="1"/>
+<text x="40" y="317" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Next up</text>
+<text x="40" y="358" font-family="Geist" font-size="22" font-weight="600" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Graph traversal:</text>
+<text x="40" y="390" font-family="Geist" font-size="22" font-weight="600" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">BFS and DFS</text>
+<text x="40" y="431" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Unit 6 · Lesson 3 of 5 · about 12 min</text>
+<text x="40" y="455" font-family="Geist" font-size="15" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">last opened yesterday</text>
+<rect x="40" y="480" width="160" height="48" rx="6" fill="#1F3A5F"/>
+<text x="120" y="509" font-family="Geist" font-size="15" font-weight="500" fill="#FFFFFF" text-anchor="middle" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Resume lesson</text>
+<path d="M40 552H335" fill="none" stroke="#E3E6EC" stroke-width="1"/>
+<text x="40" y="589" font-family="Geist" font-size="13" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Course progress</text>
+<text x="335" y="589" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="end" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">18 of 24 materials · 75%</text>
+<rect x="40" y="608" width="295" height="4" rx="2" fill="#E5E8EE"/>
+<rect x="40" y="608" width="221.25" height="4" rx="2" fill="#1F3A5F"/>
+<rect x="16" y="672" width="343" height="288" rx="8" fill="#FFFFFF" stroke="#E3E6EC" stroke-width="1"/>
+<text x="40" y="712" font-family="Geist" font-size="16" font-weight="600" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Deadlines</text>
+<text x="40" y="751" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Shortest-path task</text>
+<text x="40" y="773" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Assignment · 10 Nov, 18:00</text>
+<text x="335" y="773" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="end" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">in 18 days</text>
+<path d="M40 800H335" fill="none" stroke="#E3E6EC" stroke-width="1"/>
+<text x="40" y="839" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Complexity analysis</text>
+<text x="40" y="861" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Quiz · 12 Nov, 14:00</text>
+<text x="335" y="861" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="end" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">in 20 days</text>
+<text x="40" y="925" font-family="Geist" font-size="13" font-weight="500" fill="#1F3A5F" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">View all assignments</text>
+<rect x="16" y="984" width="343" height="496" rx="8" fill="#FFFFFF" stroke="#E3E6EC" stroke-width="1"/>
+<text x="40" y="1024" font-family="Geist" font-size="16" font-weight="600" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Needs attention</text>
+<text x="40" y="1069" font-family="Geist" font-size="13" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Weak topics</text>
+<text x="40" y="1103" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Graph traversal</text>
+<text x="335" y="1101" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="end" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Quiz accuracy 42%</text>
+<rect x="40" y="1120" width="215" height="4" rx="2" fill="#E5E8EE"/>
+<rect x="40" y="1120" width="90.3" height="4" rx="2" fill="#1F3A5F"/>
+<text x="279" y="1125" font-family="Geist" font-size="13" font-weight="500" fill="#1F3A5F" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Practice</text>
+<text x="40" y="1159" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Dynamic programming</text>
+<text x="335" y="1157" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="end" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Quiz accuracy 55%</text>
+<rect x="40" y="1176" width="215" height="4" rx="2" fill="#E5E8EE"/>
+<rect x="40" y="1176" width="118.25" height="4" rx="2" fill="#1F3A5F"/>
+<text x="279" y="1181" font-family="Geist" font-size="13" font-weight="500" fill="#1F3A5F" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Practice</text>
+<text x="40" y="1215" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Hash tables</text>
+<text x="335" y="1213" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="end" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Quiz accuracy 58%</text>
+<rect x="40" y="1232" width="215" height="4" rx="2" fill="#E5E8EE"/>
+<rect x="40" y="1232" width="124.7" height="4" rx="2" fill="#1F3A5F"/>
+<text x="279" y="1237" font-family="Geist" font-size="13" font-weight="500" fill="#1F3A5F" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Practice</text>
+<path d="M40 1280H335" fill="none" stroke="#E3E6EC" stroke-width="1"/>
+<text x="40" y="1317" font-family="Geist" font-size="13" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Recommended</text>
+<g transform="translate(40 1338) scale(0.6666666666666666)" fill="none" stroke="#5B6472" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></g>
+<text x="64" y="1351" font-family="Geist" font-size="15" font-weight="500" fill="#111827" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">BFS and DFS walkthrough</text>
+<text x="64" y="1381" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Reading · 8 min</text>
+<text x="64" y="1405" font-family="Geist" font-size="13" font-weight="400" fill="#5B6472" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">covers visited sets and queues</text>
+<text x="64" y="1445" font-family="Geist" font-size="13" font-weight="500" fill="#1F3A5F" text-anchor="start" letter-spacing="0" font-variant-numeric="tabular-nums" style="font-feature-settings:'tnum' 1">Open</text></svg>
