@@ -1,0 +1,75 @@
+' docs/04_uml/component.puml
+@startuml
+!include <C4/C4_Component>
+title Examory - Component diagram (draft, stage 1)
+
+Person(student, "Student / Teacher / Admin")
+System_Ext(agent, "Exam client agent (Windows)")
+
+Container_Boundary(web, "Web client (Next.js)") {
+  Component(ui, "Dashboards and course UI", "Next.js, TypeScript, Chart.js", "Student and teacher dashboards, grading view with risk evidence")
+}
+
+Container_Boundary(gw, "API gateway") {
+  Component(nginx, "Nginx", "reverse proxy, TLS", "Routes REST/JSON to services")
+}
+
+Container_Boundary(core, "Platform core (Go / Gin, one database per service)") {
+  Component(auth, "auth", "Go, PostgreSQL, Redis", "JWT, refresh tokens, RBAC")
+  Component(users, "users", "Go, PostgreSQL", "Profiles, groups, enrollment")
+  Component(courses, "courses", "Go, PostgreSQL", "Courses, modules, materials")
+  Component(assign, "assignments", "Go, PostgreSQL, MinIO", "Assignments, submissions")
+  Component(quizzes, "quizzes", "Go, PostgreSQL", "Question bank, variants, attempts, answers")
+  Component(grading, "grading", "Go, PostgreSQL", "Rubrics, grades, risk signals, teacher review")
+  Component(notif, "notifications", "Go, MongoDB", "In-app and e-mail notifications")
+  Component(files, "files", "Go, MinIO", "Uploads, presigned URLs")
+  Component(exams, "exam-sessions", "Go, PostgreSQL, MinIO", "Consent, session lifecycle, video references")
+  Component(collector, "event-collector", "Go", "Client and agent events")
+}
+
+Container_Boundary(bus, "Event bus") {
+  ComponentQueue(kafka, "Apache Kafka", "topics lms.*, ai.*", "Contract: docs/03_architecture/events.md")
+}
+
+Container_Boundary(ai, "AI modules") {
+  Component(integrity, "ML integrity", "Python; Rust/ONNX for scoring", "MinHash/LSH text reuse, code similarity, AI-text indicators -> risk.plagiarism, risk.ai_generated")
+  Component(anomaly, "ML anomaly", "Python (scikit-learn); Rust/ONNX", "Isolation Forest on quiz behaviour -> risk.behavior_anomaly")
+  Component(proctor, "ML proctoring", "Python, OpenCV, MediaPipe", "Webcam presence/gaze, agent signals -> risk.proctoring")
+  Component(analytics, "Analytics module", "Node.js/Express, pandas, MongoDB", "Weak topics, recommendations, group risk, grade suggestion, variant-leak detection -> analytics.*, risk.variant_leak")
+}
+
+Rel(student, ui, "Uses", "HTTPS")
+Rel(ui, nginx, "REST/JSON")
+Rel(agent, nginx, "exam.agent_signal", "HTTPS")
+Rel(nginx, auth, "REST")
+Rel(nginx, courses, "REST")
+Rel(nginx, assign, "REST")
+Rel(nginx, quizzes, "REST")
+Rel(nginx, grading, "REST")
+Rel(nginx, exams, "REST")
+Rel(nginx, collector, "REST")
+Rel(assign, files, "gRPC")
+Rel(grading, quizzes, "gRPC: reference reads")
+Rel(auth, users, "gRPC")
+
+Rel(courses, kafka, "material.viewed, course.*", "produce")
+Rel(assign, kafka, "submission.*", "produce")
+Rel(quizzes, kafka, "quiz.started/answered/submitted", "produce")
+Rel(grading, kafka, "grade.assigned, risk.reviewed", "produce")
+Rel(exams, kafka, "exam.started/ended", "produce")
+Rel(collector, kafka, "exam.agent_signal, client.*", "produce")
+
+Rel(kafka, integrity, "lms.submissions", "consume")
+Rel(kafka, anomaly, "lms.quizzes, lms.exams", "consume")
+Rel(kafka, proctor, "lms.exams", "consume")
+Rel(kafka, analytics, "lms.quizzes, lms.submissions, lms.grades, lms.courses", "consume")
+Rel(kafka, notif, "lms.*, ai.*", "consume")
+
+Rel(integrity, kafka, "ai.risk", "produce")
+Rel(anomaly, kafka, "ai.risk", "produce")
+Rel(proctor, kafka, "ai.risk", "produce")
+Rel(analytics, kafka, "ai.analytics, ai.risk", "produce")
+Rel(kafka, grading, "ai.risk, ai.analytics: store beside the work for teacher review", "consume")
+
+SHOW_LEGEND()
+@enduml
