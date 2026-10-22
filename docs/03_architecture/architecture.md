@@ -12,6 +12,12 @@ Status: draft v0.1 (stage 1, October 2026). Owner: Kaiyrbekuly Aitbek.
 
 ## 2. Context
 
+Editable diagrams: [context.puml](../04_uml/context.puml) (system context, C4) and [component.puml](../04_uml/component.puml) (component diagram, draft); PNG exports next to them. Technology decisions D1–D6 are justified in [technology_comparison.md](../07_analysis/technology_comparison.md).
+
+![System context](../04_uml/context.png)
+
+![Components](../04_uml/component.png)
+
 ```
 Students, Teachers, Administrators
           │ HTTPS
@@ -97,7 +103,7 @@ Each module is evaluated on synthetic and open datasets with precision, recall a
 
 ## 6. Open questions
 
-- gRPC vs REST for service-to-service calls (decision by end of stage 1).
+- ~~gRPC vs REST for service-to-service calls~~ — decided: REST/JSON at the gateway, gRPC between core services (technology_comparison.md, D4).
 - Schema registry for Kafka events (JSON Schema in repository vs Confluent Schema Registry).
 - Where exactly extracted text of submissions is stored (inside the event vs MinIO reference).
 - Retention period for exam video recordings and agent telemetry (legal review).

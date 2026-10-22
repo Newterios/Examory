@@ -1,0 +1,25 @@
+' docs/04_uml/context.puml
+@startuml
+!include <C4/C4_Context>
+title Examory - System context diagram
+
+Person(student, "Student", "Studies courses, submits work, takes quizzes and consented exams")
+Person(teacher, "Teacher", "Publishes courses, grades work, reviews risk signals (final decision)")
+Person(admin, "Administrator", "Manages users, groups, consent policy and retention")
+
+System(examory, "Examory", "Event-driven LMS with academic-integrity, personalized-analytics and anomaly-detection modules")
+
+System_Ext(agent, "Exam client agent (Windows)", "Runs on the student's PC during a consented exam; reports process, virtual-camera, remote-access, VM and screen-recorder signals")
+System_Ext(email, "E-mail service (SMTP)", "Delivers notifications")
+System_Ext(datasets, "Open datasets (PAN-PC-11, BigCloneBench, HC3)", "Offline evaluation of ML modules only; never student data")
+
+Rel(student, examory, "Uses via web client", "HTTPS")
+Rel(teacher, examory, "Uses via web client", "HTTPS")
+Rel(admin, examory, "Uses via web client", "HTTPS")
+Rel(agent, examory, "Sends exam.agent_signal events", "HTTPS, only with consent")
+Rel(examory, agent, "Starts/stops monitoring for an exam session", "HTTPS")
+Rel(examory, email, "Sends notifications", "SMTP")
+Rel(examory, datasets, "Reads for offline evaluation", "batch")
+
+SHOW_LEGEND()
+@enduml
