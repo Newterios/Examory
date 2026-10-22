@@ -1,0 +1,8 @@
+# Generated inputs, models, manifests, predictions and caches.
+datasets/raw/
+anomaly/artifacts/
+integrity/artifacts/
+__pycache__/
+*.py[cod]
+*.pkl
+.venv/
