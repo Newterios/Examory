@@ -102,4 +102,4 @@ For prototype review, prepare two populated desktop frames, two mobile frames, a
 
 Acceptance walkthrough: a student sees progress, weak-topic evidence, recommendations, and upcoming deadlines; a teacher filters a group, identifies a learning-support candidate, reviews risk evidence with a rationale, edits a rubric suggestion before assigning Grade, and inspects a variant comparison that exposes sample size and limitations. No walkthrough produces an automatic misconduct verdict.
 
-Assumptions: Dashboard dimensions, metric thresholds, comparison windows, UTC storage with `Asia/Almaty` (Astana) display, scoped reference APIs, and analytics `items[]`/group-scope extensions are proposed defaults pending team contract alignment.
+Assumptions: Dashboard dimensions, metric thresholds, comparison windows, and scoped reference APIs are proposed defaults pending team contract alignment. UTC storage, `Asia/Almaty` (Astana) display, and analytics `items[]`/group-scope behavior follow `docs/03_architecture/events.md`.

@@ -50,8 +50,8 @@ alt Integrity check succeeds and produces a risk signal
   grading -> Kafka : risk.reviewed
   note right of grading
     Topic: lms.grades.
-    Payload: risk_id, decision = confirmed | dismissed,
-    reviewed_by, comment.
+    Payload: risk_id, target_type, target_id,
+    decision = confirmed | dismissed, reviewed_by, comment.
     Review does not automatically change a grade.
   end note
   grading --> Web : Review saved

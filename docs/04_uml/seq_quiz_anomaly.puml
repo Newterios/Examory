@@ -70,8 +70,8 @@ alt Anomaly evaluation reports a risk
   grading -> Kafka : risk.reviewed
   note right of grading
     Topic: lms.grades.
-    Payload: risk_id, decision = confirmed | dismissed,
-    reviewed_by, comment.
+    Payload: risk_id, target_type, target_id,
+    decision = confirmed | dismissed, reviewed_by, comment.
   end note
   grading --> Web : Review saved
 else No risk or delayed/unavailable evaluation

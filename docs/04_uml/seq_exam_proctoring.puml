@@ -38,7 +38,7 @@ alt Both required consents granted
   note right of Kafka
     Topic: lms.exams.
     Payload: exam_session_id, attempt_id,
-    consent {webcam, agent, given_at}, video_ref.
+    consent {webcam, agent, consent_version, given_at}.
   end note
   Kafka -> Proctoring : exam.started
   Web -> Webcam : Start authorized capture for exam_session_id
@@ -66,14 +66,14 @@ alt Both required consents granted
     end
   end
   alt Student completes exam
-    Web -> Exam : End ExamSession
+    Web -> Exam : End ExamSession (reason = completed)
   else Server-controlled session time expires
-    Exam -> Exam : End ExamSession once
+    Exam -> Exam : End ExamSession once (reason = timeout)
   else Student withdraws either consent
     Student -> Web : Withdraw consent and stop monitoring
     Web -> Webcam : Stop capture immediately
     Web -> Agent : Stop collection immediately
-    Web -> Exam : Record withdrawal; end ExamSession
+    Web -> Exam : Record withdrawal; end ExamSession (reason = withdrawn)
   end
   Exam --> Web : Closed session status
   Web -> Webcam : Ensure capture is stopped
@@ -83,7 +83,8 @@ alt Both required consents granted
   note right of Kafka
     Topic: lms.exams.
     Payload: exam_session_id, attempt_id,
-    consent {webcam, agent, given_at}, video_ref.
+    reason = completed | timeout | withdrawn | interrupted,
+    ended_at, video_ref.
   end note
   Kafka -> Proctoring : exam.ended; stop session processing
   Web --> Student : Session ended; show completion or withdrawal status
@@ -97,8 +98,8 @@ alt Both required consents granted
     grading -> Kafka : risk.reviewed
     note right of grading
       Topic: lms.grades.
-      Payload: risk_id, decision = confirmed | dismissed,
-      reviewed_by, comment.
+      Payload: risk_id, target_type, target_id,
+      decision = confirmed | dismissed, reviewed_by, comment.
     end note
     grading --> Web : Review saved
   end

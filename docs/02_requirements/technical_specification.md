@@ -130,11 +130,12 @@ Every event uses `event_id`, `event_type`, `version`, `occurred_at`, `producer`,
 | `quiz.started` | `attempt_id`, `quiz_id`, `variant_id`, `question_count`, `time_limit_sec`, `exam_session_id` (`null` when inapplicable) |
 | `quiz.answered` | `attempt_id`, `question_id`, `question_index`, `answer_hash`, `is_change`, `time_since_shown_ms`, `time_since_attempt_start_ms` |
 | `quiz.submitted` | `attempt_id`, `quiz_id`, `variant_id`, `score`, `max_score`, `duration_ms`, `answers_changed` |
-| `grade.assigned` | `target_type` (`submission` or `attempt`), `target_id`, `grade`, `max_grade`, `rubric_scores[{criterion_id, score}]`, `graded_by` |
+| `grade.assigned` | `target_type` (`submission` or `attempt`), `target_id`, `grade`, `max_grade`, optional `rubric_id`, optional `rubric_version`, `rubric_scores[{criterion_id, score}]`, `graded_by` |
 | ML `risk.*`, including `risk.variant_leak` | `risk_id`, `target_type` (`submission`, `attempt`, `exam_session`, or `variant`), `target_id`, `score`, `level`, `model{name, version}`, `explanation`, `evidence` |
 | `analytics.recommendation`, `analytics.group_risk`, `analytics.grade_suggestion` | `student_id`, `course_id`, `kind`, `items[]`, `explanation` |
-| `risk.reviewed` | `risk_id`, `decision` (`confirmed` or `dismissed`), `reviewed_by`, `comment`. This review event is distinct from the ML risk payload above. |
-| `exam.started`, `exam.ended` | `exam_session_id`, `attempt_id`, `consent{webcam, agent, given_at}`, `video_ref` |
+| `risk.reviewed` | `risk_id`, `target_type`, `target_id`, `decision` (`confirmed` or `dismissed`), `reviewed_by`, `comment`. This review event is distinct from the ML risk payload above. |
+| `exam.started` | `exam_session_id`, `attempt_id`, `consent{webcam, agent, consent_version, given_at}` |
+| `exam.ended` | `exam_session_id`, `attempt_id`, `reason` (`completed`, `timeout`, `withdrawn`, or `interrupted`), `ended_at`, `video_ref` |
 | `exam.agent_signal` | `exam_session_id`, `signal`, `details`, `confidence` |
 
 | Kafka topic | Event types |
@@ -148,7 +149,7 @@ Every event uses `event_id`, `event_type`, `version`, `occurred_at`, `producer`,
 | `ai.risk` | `risk.plagiarism`, `risk.ai_generated`, `risk.behavior_anomaly`, `risk.proctoring`, `risk.variant_leak` |
 | `ai.analytics` | `analytics.recommendation`, `analytics.group_risk`, `analytics.grade_suggestion` |
 
-Consumers resolve missing quiz, course, and topic metadata through authorized source-service reads. Proposal only: the contents of `analytics.*` `items[]` and `student_id = null` for group-scoped `analytics.group_risk` remain to be agreed.
+Consumers resolve missing quiz, course, and topic metadata through authorized source-service reads. The `items[]` structure by `kind` and `student_id = null` for group-scoped outputs are defined in `docs/03_architecture/events.md` §4.
 
 A `Grade` targets exactly one `Submission` or `Attempt`. A `RiskSignal` targets exactly one `Submission`, `Attempt`, `ExamSession`, or `Variant`; variant signals describe a population pattern, not an accusation against every participant. Course and group permissions apply to all linked evidence. Rubric versions and assessment scoring definitions remain traceable after edits. The class diagram is a logical cross-service model, not a shared-database design.
 
@@ -206,6 +207,7 @@ An active appeal may justify a specifically authorized hold with an owner, reaso
 - A learning-support candidate initially means a mean normalized quiz score <60% across at least 3 distinct quizzes, or at least 2 overdue required assignments. This designation is separate from misconduct risk.
 - Variant comparison uses the latest eligible completed attempt per student per window, a recent 7-day window and the preceding 30-day baseline, the configured quiz pass threshold, and at least 10 distinct students per window. A rise of at least 20 percentage points creates a review candidate. Recent-window students are excluded from baseline membership to avoid overlapping cohorts; counts are recomputed. Quiz/variant/scoring versions must match. Thresholds are configurable and are not a validated detector.
 - Deadline catalogs, rosters, rubric definitions, scored answers, and question-topic mappings come from scoped source-service reads because the listed events do not contain all required fields. No additional canonical event names are invented.
+- The `quiz.answered` counting conventions are fixed in `docs/03_architecture/events.md` §3: `question_index` is zero-based, `time_since_shown_ms` is cumulative since first display, and `quiz.submitted.answers_changed` counts events with `is_change = true`.
 - Uploads initially allow PDF, TXT, and ZIP up to 20 MB; exact allowed code archive content is configured per assignment. Dates use UTC storage and initial `Asia/Almaty` (Astana) display. Measurement targets and retention periods are proposed defaults.
 
 ## 7. Acceptance criteria for MVP
