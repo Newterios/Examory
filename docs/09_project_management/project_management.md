@@ -24,7 +24,7 @@ Rules (from the repository README): branch `LMS-N-slug`, commit prefix `LMS-N:`,
 | # | Milestone | Date | Deliverables | Status |
 |---|-----------|------|--------------|--------|
 | M1 | Team, topic and supervision plan approved | 14 Oct 2026 | Justification signed by the supervisor | Done |
-| M2 | Probationary-period submission | 24 Oct 2026 | Tag `pre-defense-1`, consolidated report, form | In progress |
+| M2 | Probationary-period submission | 24 Oct 2026 | Tag `pre-defense-1`, consolidated report, form | Done (submitted 24 Oct 2026) |
 | M3 | Technical specification and architecture approved by the supervisor | 30 Nov 2026 | Supervisor feedback recorded, v1.0 of TS and events.md | Planned |
 | M4 | MVP demonstration | 31 Jan 2027 | One end-to-end scenario (§3a) running on staging; baselines evaluated on open and detector-independent data; draft chapters 1–2 | Planned |
 | M5 | Pre-defense 1 | per School schedule (Feb–Mar 2027) | Tag `pre-defense-1`, integrated AI modules | Planned |
@@ -69,7 +69,7 @@ The winter exam session falls inside stage 2, so M4 is defined as one complete s
 | Resource measurement of the full stack on the VPS | M4 | LMS-34 |
 | University decision on consent and retention policy | Exam sessions pilot (M6) | To request at M3 |
 | PAN-PC-11 and BigCloneBench access | Integrity evaluation (M4) | Download scripts ready; corpora not fetched yet |
-| Figma mockups | UX section, frontend work (M4) | LMS-23 in progress |
+| Figma mockups | UX section, frontend work (M4) | Done (LMS-23, PR #20) |
 | Teachers for the pilot course | M7 | To agree with the School in stage 3 |
 | VPS for staging | M4 | Existing server (aitbek.tech) to be re-provisioned |
 
