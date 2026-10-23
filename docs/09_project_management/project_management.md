@@ -24,7 +24,7 @@ Rules (from the repository README): branch `LMS-N-slug`, commit prefix `LMS-N:`,
 | # | Milestone | Date | Deliverables | Status |
 |---|-----------|------|--------------|--------|
 | M1 | Team, topic and supervision plan approved | 14 Oct 2026 | Justification signed by the supervisor | Done |
-| M2 | Probationary-period submission | 24 Oct 2026 | Tag `prob-period-1`, consolidated report, form | In progress |
+| M2 | Probationary-period submission | 24 Oct 2026 | Tag `pre-defense-1`, consolidated report, form | In progress |
 | M3 | Technical specification and architecture approved by the supervisor | 30 Nov 2026 | Supervisor feedback recorded, v1.0 of TS and events.md | Planned |
 | M4 | MVP demonstration | 31 Jan 2027 | One end-to-end scenario (§3a) running on staging; baselines evaluated on open and detector-independent data; draft chapters 1–2 | Planned |
 | M5 | Pre-defense 1 | per School schedule (Feb–Mar 2027) | Tag `pre-defense-1`, integrated AI modules | Planned |

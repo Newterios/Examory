@@ -75,7 +75,7 @@ Event-driven microservice architecture (Go services, Kafka, PostgreSQL, MongoDB,
 
 | Stage | Period | Checkpoint |
 |-------|--------|------------|
-| 1. Analysis and design | Oct–Nov 2026 | This submission (tag `prob-period-1`) |
+| 1. Analysis and design | Oct–Nov 2026 | This submission (tag `pre-defense-1`) |
 | 2. MVP | Dec 2026 – Jan 2027 | Platform core + event bus, dashboard prototypes, baseline models evaluated on open data |
 | 3. Integration | Feb–Mar 2027 | AI modules integrated, recommendations, exam sessions, client agent |
 | 4. Evaluation | Apr 2027 | Pilot course, false-positive evaluation, full thesis text |

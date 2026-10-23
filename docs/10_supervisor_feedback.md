@@ -1,6 +1,6 @@
 # Supervisor feedback and responses
 
-Supervisor: Sakhipov A.A., PhD. Materials sent for review on 22 October 2026 (tag `prob-period-1`): stage report, architecture and event contract v0.2, technical specification v1.0, plan and risks, verification plan. Written feedback received on 23 October 2026 (five points, document `Examory_Supervisor_feedback_EN.docx`). Overall assessment: materials well developed, requirements trace to acceptance criteria, event contract consistent, synthetic results honestly labelled; five points to close before the TS and architecture are approved at M3 (30 Nov 2026).
+Supervisor: Sakhipov A.A., PhD. Materials sent for review on 22 October 2026 (then tagged `prob-period-1`, re-tagged `pre-defense-1` on submission): stage report, architecture and event contract v0.2, technical specification v1.0, plan and risks, verification plan. Written feedback received on 23 October 2026 (five points, document `Examory_Supervisor_feedback_EN.docx`). Overall assessment: materials well developed, requirements trace to acceptance criteria, event contract consistent, synthetic results honestly labelled; five points to close before the TS and architecture are approved at M3 (30 Nov 2026).
 
 ## Feedback log
 

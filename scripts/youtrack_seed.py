@@ -45,8 +45,8 @@ ISSUES = [
     ("Dataset selection and baseline experiment plan", "yerdaulet", False,
      "ml/notebooks/datasets.md: candidate open datasets for plagiarism (text and code) and for quiz behavior; "
      "plan of a synthetic data generator for anomalies; evaluation protocol (precision, recall, false-positive rate)."),
-    ("Stage report prob-period-1 and tag", "aitbek", False,
-     "Update docs/06_reports/prob-period-1.md with links to merged PRs, create tag prob-period-1, fill the "
+    ("Stage report pre-defense-1 and tag", "aitbek", False,
+     "Update docs/06_reports/pre-defense-1.md with links to merged PRs, create tag pre-defense-1, fill the "
      "probationary-period form."),
     # stage 2 backlog
     ("auth service: JWT, refresh tokens in Redis, RBAC", "aitbek", False, "services/auth, Go/Gin. Stage 2."),
