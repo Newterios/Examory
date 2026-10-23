@@ -10,7 +10,7 @@ Each key decision lists 2–3 alternatives, the criteria that matter for Examory
 | D2 | Event bus | Apache Kafka | RabbitMQ, NATS JetStream | NFR-12 replay and deduplication, 365-day retention of learning events |
 | D3 | Data storage | PostgreSQL + MongoDB + Redis + MinIO | PostgreSQL only; MongoDB only | Relational integrity for grades (NFR-16) vs flexible aggregates for analytics |
 | D4 | Synchronous service interaction | REST/JSON externally, gRPC internally | REST everywhere; events only | FR-9/FR-14 need immediate acknowledgements; typed contracts between Go services |
-| D5 | ML inference serving | Python services for models; Rust (Axum) + ONNX Runtime for hot paths | Python FastAPI only; Triton / TorchServe | NFR-3 10 s signal latency with low cost; scikit-learn models export to ONNX |
+| D5 | ML inference serving | Python services (FastAPI) for all models in the MVP; Rust (Axum) + ONNX Runtime only as a *could* option if measurements require it | Rust/ONNX from the start; Triton / TorchServe | Target load (20 events/s, NFR-3 10 s) is within reach of a Python service; MinHash/LSH is not an ONNX model |
 | D6 | Web client | Next.js (TypeScript) | React SPA (Vite), Vue/Nuxt | SSR for dashboards, team experience, Chart.js/Recharts ecosystem (NFR-14, NFR-15) |
 
 ## D1. Core service platform
@@ -71,7 +71,18 @@ Each key decision lists 2–3 alternatives, the criteria that matter for Examory
 | Resource cost on a single VPS | Low | Medium | High (designed for GPU clusters) |
 | Development speed for experiments | Python for training and evaluation stays | Fastest | Slowest |
 
-**Decision:** keep training and evaluation in Python (scikit-learn, PyTorch); serve the anomaly model and MinHash scoring through a Rust (Axum) service with ONNX Runtime once the baseline is frozen; MediaPipe/OpenCV proctoring stays in Python because its dependencies are Python-native.
+**Decision (revised 23 Oct 2026 after supervisor review):** all ML modules are served from Python (FastAPI, scikit-learn, datasketch) in the MVP. The Rust/ONNX service is moved to *could* and will be built only if a measurement on the target VPS shows a Python service cannot meet the budget. The trigger figures: p95 scoring latency of `quiz.answered` events above 2 s, or sustained CPU above 50 % of one vCPU at 20 events/s with the full stack running (measurement task LMS-34). MinHash/LSH is not an ONNX model and stays in Python in any case.
+
+### D3a. Analytics module runtime: Node.js vs Python-only
+
+| Criterion | Node.js/Express (chosen) | Python/FastAPI |
+|-----------|--------------------------|----------------|
+| Shares types and API conventions with the Next.js web client (same TypeScript models for dashboard payloads) | Yes | No, separate models |
+| Kafka consumer and MongoDB aggregation pipelines | kafkajs + MongoDB aggregation; no pandas needed at runtime | confluent-kafka + pandas |
+| Owner's productivity (analytics engineer) | Primary stack | Secondary |
+| Number of runtimes in the component | One (Node.js); pandas is used only in offline notebooks, not in the service | One |
+
+**Decision (revised):** the analytics service is Node.js only; aggregations run as MongoDB pipelines, and pandas is confined to offline analysis notebooks. This removes the two-runtime component noted in the review. Total runtimes in production: Go (core), Node.js (web client and analytics), Python (ML). Rust is dropped from the MVP (D5).
 
 ## D6. Web client
 

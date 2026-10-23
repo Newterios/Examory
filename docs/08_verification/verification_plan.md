@@ -2,6 +2,18 @@
 
 Purpose: define how the achievement of the project aim will be demonstrated: which tests are run at which level, which outcome metrics are measured for each module, under which conditions, and against which baseline. Acceptance criteria AC-1…AC-12 and requirement IDs refer to `docs/02_requirements/technical_specification.md`; ML protocol details are in `ml/notebooks/datasets.md` and `ml/notebooks/baseline_plan.md`.
 
+## 0. Research question and hypotheses (added 23 Oct 2026 after supervisor review)
+
+**Research question.** Does feature-based anomaly detection on learning-activity events, with explanations and teacher review, find assessment anomalies that simple per-feature rules miss, at a false-positive rate teachers accept?
+
+| # | Hypothesis | Compared | Data | Success criterion |
+|---|------------|----------|------|-------------------|
+| H1 | A multivariate detector with peer features (Isolation Forest + synchrony/agreement) achieves higher recall than per-feature quantile rules at FPR ≤ 5 % on anomalies that are not aligned with single features (collusion, score jumps) | quantile rules vs Isolation Forest vs Isolation Forest + peer features | detector-independent evaluation set (§3b) and real anonymized quiz logs (LMS-36) | recall gain ≥ 15 pp at FPR ≤ 5 % on collusion and score-jump cases; if the gain is below 5 pp, rules are adopted and reported as the result |
+| H2 | Explanations and evidence reduce teacher review time and increase agreement with the signal | review with evidence vs review of raw attempt data | pilot course, ≥ 2 teachers, ≥ 20 cases each | median review time −30 %; agreement (confirmed / total) reported with CI |
+| H3 | Windowed MinHash/LSH with exact verification recovers literal and lightly edited reuse with candidate recall ≥ 0.95 at a fraction of exhaustive cost | LSH vs exhaustive Jaccard vs TF-IDF | PAN-PC-11 subset | pair precision ≥ 0.90, recall ≥ 0.85 on reuse ≥ 50 tokens |
+
+If H1 fails, the contribution of the project is the measured negative result plus the platform: explainable rules integrated end to end with teacher adjudication, which no compared LMS offers (existing_systems.md).
+
 ## 1. Test levels
 
 | Level | Scope | Tooling | Runs | Gate |
@@ -36,6 +48,10 @@ All ML numbers are reported with cohort-level bootstrap 95 % intervals and a fro
 - **Data:** synthetic events from `ml/datasets/generate_quiz_behavior.py`; open corpora downloaded by scripts under `ml/datasets/` (never committed); pilot data only from consented participants, pseudonymized, retained per TS §6.2.
 - **Procedure:** thresholds and hyper-parameters chosen on validation only; test evaluated once per model version; every result links to the commit and the YouTrack task.
 
+### 3b. Detector-independent evaluation data
+
+The stage-1 generator injects anomalies by perturbing the same features the detector uses (timing, change counts), which inflates results. Before M4 (LMS-35) a second evaluation set is built where anomalies arise from simulated **behaviour**, not from feature edits: a latent learner model (ability, speed, revision habit) answers items with realistic correctness and timing; cheating strategies are simulated as actions (copying from a peer with delay, looking up an answer, pre-knowledge of a leaked variant) and the features are computed afterwards by the same pipeline as for real data. Timing distributions are calibrated on EdNet. Real anonymized quiz logs (LMS-36) are the final arbiter; synthetic results are reported as synthetic.
+
 ## 4. Baseline solutions
 
 | Module | Baseline | Why this baseline |
@@ -52,4 +68,5 @@ Every `must` requirement maps to one acceptance test (TS §7, AC-1…AC-12). The
 ## 6. Stage-1 status of this plan
 
 - Executed: unit tests for `ml/anomaly` and `ml/integrity`; offline evaluation of the anomaly baseline on synthetic data (`ml/anomaly/results.md`); CI builds docs and compose validity.
-- Not executed yet: PAN-PC-11 run; any integration or end-to-end test (no platform code); load, security, usability checks; pilot.
+- Not executed yet: PAN-PC-11 run; detector-independent evaluation (§3b); any integration or end-to-end test (no platform code); load, security, usability checks; pilot.
+- What counts as done if the university does not approve video capture: FR-52 is `should` and is accepted with a fixture; consent, session lifecycle, agent allowlist signals and the alternative path for students without Windows (FR-47–FR-51, FR-53–FR-55, FR-57, FR-58) are verified with test accounts and constitute the proctoring deliverable of the MVP.
