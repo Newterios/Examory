@@ -67,7 +67,7 @@ Event-driven microservice architecture. See [docs/03_architecture/architecture.m
 | Verification and evaluation plan | [docs/08_verification/verification_plan.md](docs/08_verification/verification_plan.md) |
 | Project management and risks | [docs/09_project_management/project_management.md](docs/09_project_management/project_management.md) |
 | Supervisor feedback | [docs/10_supervisor_feedback.md](docs/10_supervisor_feedback.md) |
-| Stage reports | [docs/06_reports/](docs/06_reports/) |
+| Stage reports | [docs/06_reports/pre-defense-1.md](docs/06_reports/pre-defense-1.md) |
 
 ## Repository structure
 
@@ -79,7 +79,7 @@ docs/
   03_architecture/    architecture description, event contract
   04_uml/             C4 context and component, use case, data model, sequence diagrams (PlantUML + PNG), UX prototypes
   05_literature/      literature reviews, publication table, sources.bib
-  06_reports/         stage reports (prob-period-1, ...)
+  06_reports/         stage reports (pre-defense-1, ...)
   07_analysis/        user research, existing system and technology comparisons
   08_verification/    verification and evaluation plan
   09_project_management/  milestones, responsibilities, risks
@@ -95,7 +95,7 @@ docker-compose.yml    local infrastructure (PostgreSQL, MongoDB, Redis, Kafka, M
 
 | Stage | Period | Deliverables | Status |
 |-------|--------|--------------|--------|
-| 1. Analysis and design | Oct – Nov 2026 | Domain analysis and literature review, technical specification, architecture, event schema, UML models, task allocation | **in progress** |
+| 1. Analysis and design | Oct – Nov 2026 | Proposal, user research, literature review, system and technology comparisons, technical specification, architecture, diagrams, UX mockups, verification plan, project management, supervisor review | **submitted 24 Oct 2026 (tag `pre-defense-1`)**; supervisor approval checkpoint M3 on 30 Nov |
 | 2. MVP | Dec 2026 – Jan 2027 | Platform core and event bus, analytics dashboard prototypes, baseline plagiarism and anomaly models, draft chapters 1–2 | planned |
 | 3. Integration | Feb – Mar 2027 | AI modules integrated with the platform, recommendations, exam client agent, proctoring, test-variant leak detection, experiments | planned |
 | 4. Evaluation | Apr 2027 | Testing, false-positive evaluation, pilot course scenario, full thesis text | planned |
@@ -105,7 +105,7 @@ Detailed stage reports: [docs/06_reports](docs/06_reports).
 
 ## Task tracking
 
-Tasks are tracked in YouTrack, project key `LMS`. Stage-1 tasks are listed in `scripts/youtrack_seed.py` and in [docs/06_reports/prob-period-1.md](docs/06_reports/prob-period-1.md). Every branch and commit references a task ID, e.g. `LMS-6: add use case diagram`.
+Tasks are tracked in YouTrack, project key `LMS`. Stage-1 tasks are listed in `scripts/youtrack_seed.py` and in [docs/06_reports/pre-defense-1.md](docs/06_reports/pre-defense-1.md). Every branch and commit references a task ID, e.g. `LMS-6: add use case diagram`.
 
 
 YouTrack: project [LMS](https://examory.youtrack.cloud/projects/LMS) · [Kanban board](https://examory.youtrack.cloud/agiles/204-1/current) · [issues](https://examory.youtrack.cloud/issues?q=project:%20LMS)
