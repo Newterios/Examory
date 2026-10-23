@@ -1,7 +1,9 @@
 <!-- docs/02_requirements/technical_specification.md -->
 # Examory Technical Specification
 
-Version: 1.0 | Date: 2026-10-18 | Owner: Shadiyarbek Syrym, SE-2424, AITU
+Version: 1.1 | Date: 2026-10-23 | Owner: Shadiyarbek Syrym, SE-2424, AITU
+
+Change log: v1.1 — after supervisor review of 23 Oct 2026: FR-52 moved to *should* with a fixture, FR-57 and FR-58 added (students without Windows; agent allowlist of checks), AC-10 adjusted, §6.1 lists the agent checks. v1.0 — first complete version.
 
 Project: Development of an AI-Powered LMS Platform for Academic Integrity, Personalized Learning Analytics, and Anomaly Detection.
 
@@ -113,11 +115,13 @@ Released review outcomes may be visible to the affected student without exposing
 | FR-49 | must | `exam-sessions` shall record affirmative consent, policy version, permitted capture scopes, and time before starting monitoring or publishing `exam.started`; refusal shall prevent capture. |
 | FR-50 | must | A pre-exam readiness check shall show webcam permission and Windows client agent connection status; a failure shall produce an actionable message and no hidden capture. |
 | FR-51 | must | While consent remains valid and the session is active, webcam evidence and allowlisted client agent observations shall be associated with that session; `event-collector` shall publish `exam.agent_signal`. |
-| FR-52 | must | ML proctoring shall consume authorized session observations and return `risk.proctoring`; `grading` shall store the signal for teacher review with explanation and access-controlled evidence. |
+| FR-52 | should | ML proctoring shall consume authorized session observations and return `risk.proctoring`; `grading` shall store the signal for teacher review with explanation and access-controlled evidence. Until the model is deployed and the university approves video capture, acceptance uses a fixture `risk.proctoring` event; consent and session lifecycle (FR-47–FR-51, FR-53–FR-55) remain `must` and are verified with test accounts. |
 | FR-53 | must | Web and client agent shall display monitoring status and allow withdrawal; withdrawal shall stop capture and end the monitored session without automatically assigning a failing grade. |
 | FR-54 | must | Normal completion, timeout, or withdrawal shall finalize the session once, stop webcam and client agent capture, and publish `exam.ended`; closed sessions shall reject new capture. |
 | FR-55 | must | Lost connectivity or unavailable proctoring shall be shown as an interruption requiring review; it shall not itself establish cheating, and already saved quiz answers shall remain saved. |
 | FR-56 | should | Teachers shall inspect a chronological session evidence timeline, including interruptions and risk reviews, within the applicable retention period. |
+| FR-57 | must | A student whose device cannot run the Windows client agent shall be offered an alternative path configured per exam by the teacher: webcam-only session, an in-person or supervised session, or an alternative assessment; the chosen path shall be recorded in the exam session and shall not penalize the student. |
+| FR-58 | must | The client agent shall perform only the checks listed in §6.1 (allowlist); the consent notice shall show this exact list; the agent shall run only while the exam session is active, shall not read files or keystrokes, and shall remove itself completely after the session. |
 
 ## 4. Event and data contract boundaries
 
@@ -182,6 +186,8 @@ All numeric targets below are proposed MVP targets measured on a documented stag
 
 Proctoring consent is specific to webcam and client agent monitoring, records the notice version, and is obtained before collection. Refusal or withdrawal presents the institutional alternative assessment or teacher contact workflow; it does not automatically fail the student or guarantee that an alternative has already been granted. The MVP assumes adult participants; any real deployment involving minors must establish the appropriate consent process before collection. Collection is limited to the disclosed webcam evidence and allowlisted exam-related observations; unrelated personal files, passwords, and unrestricted desktop collection are excluded.
 
+**Client agent allowlist of checks (FR-58).** The agent reports only: (1) names of running processes matched against a published list of remote-access tools, screen recorders and known cheating helpers; (2) presence of virtual-camera drivers or devices; (3) indicators that the OS runs inside a virtual machine; (4) active remote-desktop sessions; (5) active screen-capture sessions. It does not capture screenshots, keystrokes, file contents, browser history or network traffic. The list is shown verbatim on the consent screen and versioned with the consent notice.
+
 The university must establish the permitted purposes, access policy, consent process, storage arrangements, and data-subject request procedure against Kazakhstan's Law No. 94-V, *On Personal Data and their Protection*, before real student data is used. Kazakhstan-hosted storage is the project deployment assumption; any cross-border transfer requires separate institutional review. These are project constraints, not a legal compliance certification. Reference: [Adilet, Law No. 94-V](https://old.adilet.zan.kz/rus/docs/Z1300000094), checked 2026-10-18.
 
 Signals, learning-support labels, AI-text indications, and grade suggestions are provisional. A teacher reviews the explanation, relevant context, and student clarification. Confirming a signal records that review; academic sanctions and grade changes require a separate authorized action. No detector accuracy, perfect cheating detection, or causal explanation of learning outcomes is promised.
@@ -225,7 +231,7 @@ Acceptance uses synthetic or consented test data, two independent courses/groups
 | AC-7 | FR-35–FR-36 | Teacher filters the assigned group, sees correct completion/performance counts and explained learning-support candidates from `analytics.group_risk`, and cannot access the other group's individual records. |
 | AC-8 | FR-41–FR-42, FR-45 | A supplied behavior anomaly from quiz events appears beside its attempt in `grading` and follows the same teacher review workflow. No signal or service timeout is not represented as proof of integrity. |
 | AC-9 | FR-43–FR-45 | A synthetic comparable variant cohort meeting sample and rate-rise thresholds produces `risk.variant_leak`; a small sample and a changed scoring version do not. Evidence shows both windows/counts and permits a teacher decision of `confirmed` or `dismissed`. |
-| AC-10 | FR-47–FR-52 | Refused consent produces no capture and no `exam.started`. With recorded consent and readiness, the session emits `exam.started`, correlated `exam.agent_signal`, and a supplied `risk.proctoring` is reviewable in `grading`. |
+| AC-10 | FR-47–FR-52, FR-57, FR-58 | Refused consent produces no capture and no `exam.started`. With recorded consent and readiness, the session emits `exam.started`, correlated `exam.agent_signal`, and a fixture `risk.proctoring` is reviewable in `grading` (a live model is not required for MVP acceptance). The consent screen shows the agent's allowlist; a student without Windows is offered the configured alternative path. |
 | AC-11 | FR-53–FR-55; NFR-8 | Normal end, timeout, and withdrawal each stop webcam and client agent capture and produce one logical `exam.ended`; later capture is rejected. A disconnect is visible, saved answers survive, and no automatic failing grade is created. |
 | AC-12 | NFR-1–NFR-4, NFR-6–NFR-7, NFR-9–NFR-16 | Recorded load, authorization, upload/link-expiry, retention, replay, restore, audit, and usability checks meet the stated targets. ML unavailability preserves submission/quiz workflows and shows pending results. |
 

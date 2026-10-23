@@ -1,6 +1,8 @@
 # Examory — System Architecture
 
-Status: draft v0.1 (stage 1, October 2026). Owner: Kaiyrbekuly Aitbek.
+Status: draft v0.2 (23 October 2026, after supervisor review). Owner: Kaiyrbekuly Aitbek.
+
+**Document precedence.** When documents disagree, the order of truth is: `events.md` (event contract) → `technical_specification.md` (requirements) → this document (architecture) → `proposal.md` (scope). A conflict is fixed by changing the lower-ranked document in the same pull request.
 
 ## 1. Principles
 
@@ -72,7 +74,7 @@ Consumes `quiz.*`, `submission.*`, `grade.*`, `material.viewed`. Aggregates per 
 - weak topics and material recommendations for the student dashboard (`analytics.recommendation`);
 - group performance and at-risk students for the teacher dashboard (`analytics.group_risk`);
 - recommended grade by rubric criteria with explanation and a summary of the student's previous work (`analytics.grade_suggestion`);
-- test-variant leak detection by abnormal growth of pass rate per variant (`risk.variant_leak`), with automatic replacement of the variant from the question bank through the `quizzes` API.
+- test-variant leak detection by abnormal growth of pass rate per variant (`risk.variant_leak`). The signal is a candidate for teacher review only (FR-43–FR-45). Replacing the variant from the question bank is an explicit teacher action in `quizzes` after the signal is confirmed; it will publish `quiz.variant_replaced` with the confirming `risk_id` (events.md v0.3, LMS-37) and is recorded in the audit log.
 
 ### 3.4 ML modules (Python, Rust) — Akhanov Y.
 
@@ -81,7 +83,7 @@ Consumes `quiz.*`, `submission.*`, `grade.*`, `material.viewed`. Aggregates per 
 | Plagiarism (text and code) | `submission.created` | shingles / MinHash, sentence embeddings, token-based code similarity | `risk.plagiarism` with matched submissions and similarity score |
 | AI-generated text indicators | `submission.created` | perplexity / stylometric features, classifier | `risk.ai_generated` (signal only) |
 | Behavioral anomalies in quizzes | `quiz.answered`, `quiz.submitted`, `client.*` | Isolation Forest, autoencoders on answer timing, answer patterns, score jumps, synchronous submissions | `risk.behavior_anomaly` |
-| Proctoring | webcam frames from `exam-sessions`, `exam.agent_signal` | OpenCV, MediaPipe (presence, gaze), virtual camera / deepfake indicators | `risk.proctoring` |
+| Proctoring (*should*, FR-52) | webcam frames from `exam-sessions`, `exam.agent_signal` | OpenCV, MediaPipe (face presence; gaze proxy exploratory). Deepfake detection is **out of scope** (proposal §6); only agent-reported virtual-camera signals are used | `risk.proctoring`; a fixture is used for acceptance while the model is not deployed |
 | Inference service | — | ONNX Runtime served by Rust (Axum) for low-latency scoring | HTTP API used by the modules above |
 
 Each module is evaluated on synthetic and open datasets with precision, recall and false-positive rate before integration.
@@ -89,7 +91,7 @@ Each module is evaluated on synthetic and open datasets with precision, recall a
 ## 4. Data flow example: assignment submission
 
 1. Student uploads a file in the web client → `files` stores it in MinIO → `file.uploaded`.
-2. Student submits → `assignments` saves the submission → `submission.created` (with file reference and extracted text).
+2. Student submits → `assignments` saves the submission → `submission.created` with file references and `text_ref`, a MinIO pointer to the extracted text (the text itself is never embedded in the event).
 3. ML integrity consumes the event, compares with the corpus, publishes `risk.plagiarism` (score, matched submission IDs, explanation).
 4. Analytics consumes the event, updates student progress, publishes `analytics.grade_suggestion` when the teacher opens grading.
 5. `grading` stores risk signals next to the submission; the teacher sees them, decides, and `risk.reviewed` is published with the decision (confirmed / dismissed). Reviewed decisions become labelled data for evaluating false positives.
@@ -99,11 +101,16 @@ Each module is evaluated on synthetic and open datasets with precision, recall a
 - Docker Compose for local development (`docker-compose.yml` in repository root), one container per service.
 - Nginx as API gateway and TLS termination.
 - GitHub Actions: build and test on every pull request; image build on tags.
-- Production target: a single VPS with Docker Compose for the MVP; Kubernetes is out of scope.
+- Production target: a single VPS (4 vCPU, 8 GB) with Docker Compose for the MVP; Kubernetes is out of scope. Memory and CPU of the full stack are measured before M4 (LMS-34); if it does not fit, MongoDB folds into PostgreSQL JSONB first, then Kafka is replaced by NATS JetStream (technology_comparison.md D2, D3).
 
-## 6. Open questions
+## 6. Decisions and open questions
 
-- ~~gRPC vs REST for service-to-service calls~~ — decided: REST/JSON at the gateway, gRPC between core services (technology_comparison.md, D4).
-- Schema registry for Kafka events (JSON Schema in repository vs Confluent Schema Registry).
-- Where exactly extracted text of submissions is stored (inside the event vs MinIO reference).
-- Retention period for exam video recordings and agent telemetry (legal review).
+| Question | Status |
+|----------|--------|
+| gRPC vs REST between services | Decided: REST/JSON at the gateway, gRPC between core services (technology_comparison.md D4) |
+| Where extracted submission text is stored | Decided: MinIO, referenced by `text_ref` in `submission.created` (events.md §3) |
+| Retention of exam recordings and agent telemetry | Decided as a proposal: 7 days after `exam.ended`, pending university approval (TS §6.2) |
+| Automatic variant replacement | Decided: never automatic; teacher action with `quiz.variant_replaced` (LMS-37) |
+| ML serving in Rust/ONNX | Deferred to *could*: Python serving for the MVP, Rust only if measurements require it (technology_comparison.md D5, LMS-34) |
+| Schema registry for Kafka events | Open: JSON Schema files in `docs/03_architecture/schemas/` first; registry revisited when a third producer appears |
+| Resource fit of the full stack on one VPS | Open until measured (LMS-34, before M4) |

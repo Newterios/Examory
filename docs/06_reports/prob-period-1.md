@@ -57,7 +57,8 @@ Observations: peer features are what make collusion detectable (recall 0.81 vs 0
 - ML baselines are evaluated on synthetic data only; the PAN-PC-11 run for the text baseline has not been executed yet (corpus download pending), so `ml/integrity/results.md` is still a template.
 - AI-text detection and proctoring remain literature-level; no models.
 - The technical specification, literature reviews and architecture are drafts awaiting supervisor feedback.
-- Open architecture decisions (gRPC vs REST, schema registry, retention of exam recordings) are documented in architecture.md §6 and not yet decided.
+- Architecture decisions: gRPC vs REST, text storage and retention are decided (architecture.md §6); still open are the Kafka schema registry and the resource fit of the full stack on one VPS (measurement before M4).
+- Supervisor review of 23 Oct 2026 raised five points (variant replacement, M4 scope and web-client ownership, runtime count, research question and real data, proctoring scope); all are answered in docs/10_supervisor_feedback.md and the affected documents are updated; two points are scheduled for the next weekly meeting.
 
 ## Next stage (December 2026 – January 2027)
 
