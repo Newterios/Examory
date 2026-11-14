@@ -67,6 +67,7 @@ Event-driven microservice architecture. See [docs/03_architecture/architecture.m
 | Verification and evaluation plan | [docs/08_verification/verification_plan.md](docs/08_verification/verification_plan.md) |
 | Project management and risks | [docs/09_project_management/project_management.md](docs/09_project_management/project_management.md) |
 | Supervisor feedback | [docs/10_supervisor_feedback.md](docs/10_supervisor_feedback.md) |
+| Research article (draft) and its experiment | [docs/11_paper/manuscript.md](docs/11_paper/manuscript.md), [ml/experiments/inflation/](ml/experiments/inflation/), behaviour simulator [sim/](sim/), EdNet calibration [ml/ednet/](ml/ednet/) |
 | Stage reports | [docs/06_reports/pre-defense-1.md](docs/06_reports/pre-defense-1.md) |
 
 ## Repository structure
@@ -84,9 +85,11 @@ docs/
   08_verification/    verification and evaluation plan
   09_project_management/  milestones, responsibilities, risks
   10_supervisor_feedback.md
+  11_paper/           article draft and verified bibliography
 services/             Go microservices of the platform core (one folder per service)
 analytics/            personalized learning analytics module
 ml/                   ML experiments, notebooks, model training and inference services
+sim/                  behaviour-level quiz simulator (Go): honest learner model, cheating mechanisms, paired worlds
 .github/workflows/    CI
 docker-compose.yml    local infrastructure (PostgreSQL, MongoDB, Redis, Kafka, MinIO)
 ```

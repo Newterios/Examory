@@ -73,7 +73,16 @@ assignment and cohort partition. Main design: `--students 2000 --attempts 3
 cohort-split seed. Slots: S1 rapid_response↔preknowledge, S2 excessive_changes↔lookup,
 S3 collusion↔copy_peer, S4 score_jump↔proxy.
 
-## Pre-specified analysis plan (written before any result was inspected)
+## Analysis plan
+
+**What was fixed when.** The protocol, the metrics, the primary endpoint (SIM-FI − SIM-BL
+recall per slot × detector), its tests and Holm correction, and the H1 decision rule were fixed
+before the multi-seed runs. A smoke run of `main` on a pre-release simulator build preceded the
+first amendment below. The seven amendments of 14 Nov 2026 were made after the first full
+multi-seed run with uncalibrated parameters (`results_defaults/`) and before the calibrated rerun
+(`results/`); they added secondary analyses and output formats and did not change any metric, test,
+correction or decision rule. Plan, simulator, calibration and results were committed together, so
+the repository history does not independently date these steps.
 
 **Protocol per seed and condition.** Cohorts split 60/20/20 (`split_groups`). Reference
 (timing quantiles, answer frequencies) and models fitted on normal attempts of training
@@ -189,5 +198,11 @@ when larger; C2ST uses ≤ 6 000 attempts per class.
   no-cheating assumption cannot be checked, and peer features have no meaning there.
 * The C2ST uses `history_missing`/`z_score`, which partly reflect the attempts-per-user design
   rather than behaviour.
-* The simulator lives in an untracked directory (`sim/`); its source tree hash and binary hash
-  are recorded instead of a git revision.
+* The simulator (`sim/`) was not yet committed when the stages ran; it is now tracked in git
+  (commit 31485bd), and every stage records its source tree hash and binary hash.
+* Each stage JSON records the SHA-256 of the harness files at the time the stage ran
+  (`provenance.harness_sha256`). `analyze.py`, `common.py` and `compact.py` were changed after the stages
+  ran (compact stage format, table and figure labels), so their committed hashes differ from those
+  recorded in `results/stages/main.json`; the other harness files match. Check performed on the
+  committed code (14 Nov 2026): re-running `compact` and `analyze` reproduces every committed stage
+  file, table and figure byte for byte; only provenance fields of `summary.json` change.
