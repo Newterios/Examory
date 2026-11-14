@@ -54,8 +54,13 @@ func New(store Store, clk clock.Clock, logger *slog.Logger, cfg Config) *Service
 	}
 }
 
-// Now returns the real clock reading (used to build real-time actors).
-func (s *Service) Now() time.Time { return s.clock.Now() }
+// Now returns the real clock reading truncated to milliseconds (used to build
+// real-time actors). Event times have millisecond precision; keeping every
+// stored instant ms-aligned makes occurred_at, time_since_attempt_start_ms and
+// duration_ms exactly consistent (answer.occurred_at == submitted.occurred_at
+// - (duration_ms - time_since_attempt_start_ms)), which the anomaly feature
+// pipeline checks to the millisecond.
+func (s *Service) Now() time.Time { return s.clock.Now().Truncate(time.Millisecond) }
 
 func canManage(p authn.Principal, q *domain.Quiz) bool {
 	return p.Role == authn.RoleAdmin || (p.Role == authn.RoleTeacher && q.OwnerID == p.UserID)

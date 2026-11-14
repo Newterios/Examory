@@ -276,3 +276,40 @@ func TestSimClockEnabled(t *testing.T) {
 		t.Fatalf("simulated event %s actor %s", got, evs[1].Env.Actor.UserID)
 	}
 }
+
+// TestEventTimesConsistentWithSubMillisecondClock: with a real clock that has
+// sub-millisecond parts, answer timestamps still satisfy
+// answered.occurred_at == submitted.occurred_at - (duration_ms - time_since_attempt_start_ms).
+func TestEventTimesConsistentWithSubMillisecondClock(t *testing.T) {
+	v := newEnv(t, false)
+	teacher, group, student := ids.NewV7(), ids.NewV7(), ids.NewV7()
+	qid := v.setup(teacher, group)
+	ts := v.token(student, authn.RoleStudent, group)
+	v.clk.Advance(500 * time.Microsecond) // start at .5 ms
+	_, m := v.do("POST", "/v1/quizzes/"+qid+"/attempts", ts, nil, nil)
+	aid := m["id"].(string)
+	q0 := m["questions"].([]any)[0].(map[string]any)
+	qID := q0["id"].(string)
+	opt := q0["options"].([]any)[0].(map[string]any)["id"].(string)
+	v.clk.Advance(1777500 * time.Microsecond) // shown at .0 ms
+	v.do("POST", "/v1/attempts/"+aid+"/questions/"+qID+"/shown", ts, nil, nil)
+	v.clk.Advance(2345 * time.Millisecond) // answer at .0 ms
+	v.do("PUT", "/v1/attempts/"+aid+"/answers/"+qID, ts, map[string]any{"selected_option_ids": []string{opt}}, nil)
+	v.clk.Advance(987900 * time.Microsecond) // submit at .9 ms: 1 ms drift without truncation
+	if w, _ := v.do("POST", "/v1/attempts/"+aid+"/submit", ts, nil, map[string]string{"Idempotency-Key": "ms-key-0001"}); w.Code != 200 {
+		t.Fatalf("submit %d", w.Code)
+	}
+	evs := v.store.Events()
+	var ans struct {
+		TimeSinceAttemptStartMs int64 `json:"time_since_attempt_start_ms"`
+	}
+	var sub struct {
+		DurationMs int64 `json:"duration_ms"`
+	}
+	_ = json.Unmarshal(evs[1].Env.Payload, &ans)
+	_ = json.Unmarshal(evs[2].Env.Payload, &sub)
+	want := evs[2].Env.OccurredAt.Add(-time.Duration(sub.DurationMs-ans.TimeSinceAttemptStartMs) * time.Millisecond)
+	if !want.Equal(evs[1].Env.OccurredAt.Time) {
+		t.Fatalf("answered at %v, derived %v", evs[1].Env.OccurredAt, want)
+	}
+}
