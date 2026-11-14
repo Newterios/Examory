@@ -63,6 +63,8 @@ Students, Teachers, Administrators
 | `exam-sessions` | Exam session lifecycle, student consent, link between quiz attempt, webcam stream and client agent telemetry | PostgreSQL + MinIO (video) | `exam.started`, `exam.ended`, `exam.agent_signal` |
 | `event-collector` | Thin HTTP/gRPC endpoint for the web client and the exam agent to push client-side events (focus lost, tab switched, paste) | — | `client.*` |
 
+Stage-2 note (LMS-38): for M4 the minimal `users` responsibilities (admin-provisioned accounts, roles, groups, membership, `user.created`, `group.updated`) are implemented inside `auth`; they move to `users` when it is split out. Both services use the transactional outbox in `services/platform`.
+
 ### 3.2 Exam session client agent (Go, Windows) — Kaiyrbekuly A.
 
 Runs only during an exam session after the student's consent. Checks running processes, virtual cameras, remote-access tools, virtual machines and screen recorders through WMI and sends `exam.agent_signal` events. It never blocks anything on the student's machine; it only reports.

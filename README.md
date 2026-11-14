@@ -136,6 +136,24 @@ python -m unittest discover -s ml/tests -v
 
 Details: [ml/anomaly/README.md](ml/anomaly/README.md), [ml/integrity/README.md](ml/integrity/README.md). Service-specific instructions will be added to each service's README as they appear.
 
+### Platform (stage 2)
+
+Go services `auth` and `quizzes` on the shared kit `services/platform` (Go 1.26; the toolchain is fetched automatically by `go`). Secrets live in a git-ignored `.env`.
+
+```bash
+make dev-env                       # once: .env with random dev secrets (bootstrap admin password inside)
+docker compose up -d --build       # infra + auth + quizzes + Nginx gateway on http://127.0.0.1:8000
+curl -s http://127.0.0.1:8000/api/auth/.well-known/jwks.json
+
+make test                          # go test -race for platform, auth, quizzes
+make integration                   # against the compose Postgres/Redis/Kafka (needs `make infra` or the stack)
+make vet fmt vuln                  # go vet, gofmt check, govulncheck
+```
+
+Gateway routes: `/api/auth/...` → `auth` (login, refresh, logout, users, groups, JWKS), `/api/quizzes/...` → `quizzes` (quizzes, attempts, answers, submit). Events go to Kafka (`lms.users`, `lms.quizzes`; Kafka UI on `127.0.0.1:8080` if started). Details, API tables and the security model: [services/platform/README.md](services/platform/README.md), [services/auth/README.md](services/auth/README.md), [services/quizzes/README.md](services/quizzes/README.md). Event JSON Schemas: [docs/03_architecture/schemas/](docs/03_architecture/schemas/).
+
+Existing volumes created with the old hard-coded passwords keep those passwords; run `docker compose down -v` once (this deletes local data) or set the old values in `.env`.
+
 ## Reference prototype
 
 EduLMS (https://github.com/Newterios/educationalLMS) is a pre-diploma LMS prototype by Kaiyrbekuly A. (Go microservices, Nginx gateway, JWT with Redis, RBAC, Kafka, MinIO, CI/CD). It serves as the architectural reference for Examory; the diploma platform is reimplemented from scratch around the event-driven design in `docs/03_architecture/`.
