@@ -1,13 +1,16 @@
 // Package eventschema validates serialized events against the JSON Schemas
-// in docs/03_architecture/schemas (draft 2020-12). It is intended for
-// contract tests; production binaries should not import it.
+// in docs/03_architecture/schemas (draft 2020-12). Producers use it in
+// contract tests (Load/FindDir); consumers that must reject invalid input at
+// runtime embed a copy of the schemas and use LoadFS.
 package eventschema
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -45,16 +48,19 @@ func FindDir() (string, error) {
 }
 
 // Load compiles every *.schema.json in dir.
-func Load(dir string) (*Validator, error) {
+func Load(dir string) (*Validator, error) { return LoadFS(os.DirFS(dir)) }
+
+// LoadFS compiles every top-level *.schema.json of fsys (e.g. an embed.FS).
+func LoadFS(fsys fs.FS) (*Validator, error) {
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
 	c.AssertFormat()
-	files, err := filepath.Glob(filepath.Join(dir, "*.schema.json"))
+	files, err := fs.Glob(fsys, "*.schema.json")
 	if err != nil || len(files) == 0 {
-		return nil, fmt.Errorf("eventschema: no schemas in %s", dir)
+		return nil, fmt.Errorf("eventschema: no *.schema.json files")
 	}
 	for _, f := range files {
-		raw, err := os.ReadFile(f) // #nosec G304 -- test-only; paths come from a glob of the schema directory
+		raw, err := fs.ReadFile(fsys, f)
 		if err != nil {
 			return nil, err
 		}
@@ -62,11 +68,32 @@ func Load(dir string) (*Validator, error) {
 		if err != nil {
 			return nil, fmt.Errorf("eventschema: %s: %w", f, err)
 		}
-		if err := c.AddResource(baseURL+filepath.Base(f), doc); err != nil {
+		if err := c.AddResource(baseURL+path.Base(f), doc); err != nil {
 			return nil, err
 		}
 	}
 	return &Validator{compiler: c, cache: map[string]*jsonschema.Schema{}}, nil
+}
+
+// Has reports whether a schema exists for the event type and version.
+func (v *Validator) Has(eventType string, version int) bool {
+	_, err := v.schema(eventType, version)
+	return err == nil
+}
+
+func (v *Validator) schema(eventType string, version int) (*jsonschema.Schema, error) {
+	name := fmt.Sprintf("%s.v%d.schema.json", eventType, version)
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if sch, ok := v.cache[name]; ok {
+		return sch, nil
+	}
+	sch, err := v.compiler.Compile(baseURL + name)
+	if err != nil {
+		return nil, fmt.Errorf("eventschema: no schema for %s v%d: %w", eventType, version, err)
+	}
+	v.cache[name] = sch
+	return sch, nil
 }
 
 // Validate checks one serialized event against the schema selected by its
@@ -82,19 +109,10 @@ func (v *Validator) Validate(event []byte) error {
 	if head.EventType == "" || strings.ContainsAny(head.EventType, "/\\") {
 		return fmt.Errorf("eventschema: missing or invalid event_type")
 	}
-	name := fmt.Sprintf("%s.v%d.schema.json", head.EventType, head.Version)
-	v.mu.Lock()
-	sch, ok := v.cache[name]
-	if !ok {
-		var err error
-		sch, err = v.compiler.Compile(baseURL + name)
-		if err != nil {
-			v.mu.Unlock()
-			return fmt.Errorf("eventschema: no schema for %s v%d: %w", head.EventType, head.Version, err)
-		}
-		v.cache[name] = sch
+	sch, err := v.schema(head.EventType, head.Version)
+	if err != nil {
+		return err
 	}
-	v.mu.Unlock()
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(event))
 	if err != nil {
 		return err

@@ -47,6 +47,14 @@ type Handler func(ctx context.Context, tx pgx.Tx, env events.Envelope) error
 // (logged) instead of blocking the partition.
 var ErrPermanent = errors.New("permanent processing error")
 
+type topicKey struct{}
+
+// TopicFromContext returns the Kafka topic of the record being handled ("" outside a handler).
+func TopicFromContext(ctx context.Context) string {
+	t, _ := ctx.Value(topicKey{}).(string)
+	return t
+}
+
 // HandleOnce runs h for env unless consumer already processed env.EventID.
 // It reports whether h ran.
 func HandleOnce(ctx context.Context, pool *pgxpool.Pool, consumerName string, env events.Envelope, h Handler) (bool, error) {
@@ -78,6 +86,22 @@ type Config struct {
 	// MaxAttempts per event before a non-permanent error is treated as
 	// permanent and skipped (default 10). Retries back off exponentially.
 	MaxAttempts int
+	// Rejected, if set, is called for records that are skipped: envelopes that
+	// fail validation and events whose handler failed permanently. Use it to
+	// dead-letter-log them (it must not block for long). reason never
+	// contains secrets but may contain parts of the record.
+	Rejected func(ctx context.Context, r RejectedRecord)
+}
+
+// RejectedRecord describes a skipped Kafka record.
+type RejectedRecord struct {
+	Topic     string
+	Partition int32
+	Offset    int64
+	Value     []byte
+	EventID   string // "" when the envelope could not be parsed
+	EventType string
+	Reason    string
 }
 
 // Consumer consumes topics and calls Handler once per event_id.
@@ -146,8 +170,10 @@ func (c *Consumer) process(ctx context.Context, rec *kgo.Record) error {
 	env, err := events.Parse(rec.Value)
 	if err != nil {
 		c.log.Error("skipping invalid event", slog.String("topic", rec.Topic), slog.Int64("offset", rec.Offset), slog.String("error", err.Error()))
+		c.reject(ctx, rec, env, err)
 		return nil
 	}
+	ctx = context.WithValue(ctx, topicKey{}, rec.Topic)
 	backoff := 100 * time.Millisecond
 	for attempt := 1; ; attempt++ {
 		ran, err := HandleOnce(ctx, c.pool, c.cfg.Group, env, c.handler)
@@ -160,6 +186,7 @@ func (c *Consumer) process(ctx context.Context, rec *kgo.Record) error {
 		if errors.Is(err, ErrPermanent) || attempt >= c.cfg.MaxAttempts {
 			c.log.Error("event processing failed permanently; skipped",
 				slog.String("event_id", env.EventID), slog.String("event_type", env.EventType), slog.String("error", err.Error()))
+			c.reject(ctx, rec, env, err)
 			return nil
 		}
 		c.log.Warn("event processing failed; retrying", slog.String("event_id", env.EventID), slog.Int("attempt", attempt), slog.String("error", err.Error()))
@@ -172,4 +199,12 @@ func (c *Consumer) process(ctx context.Context, rec *kgo.Record) error {
 		}
 		backoff = min(backoff*2, 30*time.Second)
 	}
+}
+
+func (c *Consumer) reject(ctx context.Context, rec *kgo.Record, env events.Envelope, err error) {
+	if c.cfg.Rejected == nil {
+		return
+	}
+	c.cfg.Rejected(ctx, RejectedRecord{Topic: rec.Topic, Partition: rec.Partition, Offset: rec.Offset,
+		Value: rec.Value, EventID: env.EventID, EventType: env.EventType, Reason: err.Error()})
 }

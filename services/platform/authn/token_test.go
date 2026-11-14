@@ -116,7 +116,7 @@ func TestVerifyRejects(t *testing.T) {
 	cases := map[string]string{
 		"empty":         "",
 		"garbage":       "a.b.c",
-		"tampered":      good[:len(good)-2] + "AA",
+		"tampered":      tamper(good),
 		"wrong key":     craft(t, jwt.SigningMethodEdDSA, otherPriv, hdr, baseClaims()),
 		"unknown kid":   craft(t, jwt.SigningMethodEdDSA, priv, map[string]any{"kid": "zz", "typ": TokenType}, baseClaims()),
 		"no kid":        craft(t, jwt.SigningMethodEdDSA, priv, map[string]any{"typ": TokenType}, baseClaims()),
@@ -209,4 +209,17 @@ func TestJWKSClientCachingAndRefreshLimit(t *testing.T) {
 	if _, err := c.Key(ctx, "k1"); err != nil {
 		t.Fatalf("stale key should still be served: %v", err)
 	}
+}
+
+// tamper flips one character inside the signature (not the last one, whose
+// low bits are base64 padding and may decode to the same bytes).
+func tamper(tok string) string {
+	b := []byte(tok)
+	i := len(b) - 10
+	if b[i] == 'A' {
+		b[i] = 'B'
+	} else {
+		b[i] = 'A'
+	}
+	return string(b)
 }
