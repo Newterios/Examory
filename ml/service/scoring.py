@@ -52,7 +52,7 @@ def level_for(raw_score: float, model: dict[str, Any]) -> str:
 
 
 def _sort_key(env: dict[str, Any]) -> tuple[datetime, str]:
-    return datetime.fromisoformat(env["occurred_at"].replace("Z", "+00:00")), env["event_id"]
+    return datetime.fromisoformat(env["occurred_at"]), env["event_id"]
 
 
 def to_csv(envelopes: list[dict[str, Any]]) -> str:

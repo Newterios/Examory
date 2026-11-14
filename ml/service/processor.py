@@ -36,7 +36,7 @@ class Stats:
 
 
 def parse_time(value: str) -> datetime:
-    t = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    t = datetime.fromisoformat(value)
     if t.tzinfo is None:
         raise ValueError("occurred_at without timezone")
     return t
