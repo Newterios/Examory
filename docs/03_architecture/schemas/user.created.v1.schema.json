@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/user.created.v1.schema.json",
+  "title": "user.created v1",
+  "description": "Payload proposed in LMS-38. Carries no e-mail or name (NFR-9).",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": { "const": "user.created" },
+    "version": { "const": 1 },
+    "producer": { "const": "auth" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "role", "created_by"],
+      "properties": {
+        "user_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "role": { "enum": ["student", "teacher", "admin", "system"] },
+        "created_by": { "$ref": "envelope.schema.json#/$defs/id" }
+      }
+    }
+  }
+}
