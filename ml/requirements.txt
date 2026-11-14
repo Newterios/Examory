@@ -3,3 +3,6 @@ numpy==2.3.5
 pandas==3.0.1
 scikit-learn==1.7.2
 datasketch==1.6.5
+# Experiments and EdNet calibration (ml/experiments, ml/ednet)
+scipy==1.18.1
+matplotlib==3.11.2
