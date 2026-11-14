@@ -131,6 +131,14 @@ These additions are implemented by `auth` and `quizzes` in stage 2 and validated
   "member_user_id": "u_123 | null", "member_count": 25 }                         // group.updated
 ```
 
+### Proposed for M4 (draft v0.3, pending review)
+
+- `risk.behavior_anomaly` and `risk.reviewed` have JSON Schemas (`schemas/risk.behavior_anomaly.v1.schema.json`, `schemas/risk.reviewed.v1.schema.json`). `evidence.features` stays open for additional keys, as §4 allows; the documented keys are typed.
+- `risk_id` of `risk.behavior_anomaly` is deterministic per model version and attempt (UUIDv5), so re-processing an attempt never yields a second signal. `grading` deduplicates by `event_id` and by `risk_id`.
+- Partition keys: `risk.behavior_anomaly` is keyed by `payload.target_id` (the attempt). `risk.reviewed` is keyed by `context.course_id`, or by `risk_id` when no course is known.
+- The behavior scorer reuses `ml/anomaly/to_risk_event.py` unchanged, so its envelope carries `producer: "integrity"` and `actor: {"user_id": "integrity", "role": "system"}`.
+- `risk.reviewed` actor is the reviewing teacher (`role: teacher`; admins do not review, TS §2). `comment` is the required reason (1–2000 characters).
+
 ### `grade.assigned` (v1)
 
 ```json
@@ -327,7 +335,7 @@ A `grade_suggestion` is advisory; only an explicit teacher save through `grading
 
 ## 6. Changelog
 
-**v0.3-draft (November 2026, LMS-38, pending review)** — JSON Schemas for the envelope and the `auth`/`quizzes` events; `lms.users` payloads; canonical `answer_hash` form for choice questions; optional `quiz.submitted.reason`; timeout `occurred_at` rule; no event for identical re-saves. All additive; payload versions stay at 1.
+**v0.3-draft (November 2026, LMS-38 and M4, pending review)** — schemas for `risk.behavior_anomaly` and `risk.reviewed`, deterministic behavior `risk_id`, risk partition keys; JSON Schemas for the envelope and the `auth`/`quizzes` events; `lms.users` payloads; canonical `answer_hash` form for choice questions; optional `quiz.submitted.reason`; timeout `occurred_at` rule; no event for identical re-saves. All additive; payload versions stay at 1.
 
 **v0.2 (October 2026)** — clarifications raised by the technical specification (LMS-5), dataset plan (LMS-10) and the synthetic generator (LMS-19); all additive, payload versions stay at 1:
 

@@ -52,7 +52,7 @@ jobs:
           docker compose run --rm kafka-init
       - name: Run integration tests (platform, auth, quizzes)
         run: make integration
-      - name: Build images and run the gateway end-to-end test
+      - name: Build images and run the gateway end-to-end test (auth + quizzes)
         run: |
           docker compose up -d --build --wait auth quizzes gateway
           set -a; . ./.env; set +a
@@ -60,9 +60,32 @@ jobs:
           E2E_GATEWAY_URL=http://127.0.0.1:8000 E2E_ADMIN_EMAIL="$AUTH_BOOTSTRAP_ADMIN_EMAIL" \
           E2E_ADMIN_PASSWORD="$AUTH_BOOTSTRAP_ADMIN_PASSWORD" IT_KAFKA_BROKERS=127.0.0.1:9092 \
           go test -count=1 -tags integration -run E2E -v ./integration/
+      - name: M4 scenario (anomaly model, scorer, grading, research overlay)
+        run: |
+          make m4
+          make e2e
       - name: Service logs on failure
         if: failure()
-        run: docker compose logs auth quizzes gateway kafka-init postgres-init
+        run: docker compose logs auth quizzes grading anomaly-scorer gateway kafka-init postgres-init
+
+  anomaly-service:
+    name: Anomaly scorer (Python) tests, lint and audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned dependencies
+        run: python -m pip install -r ml/service/requirements.txt ruff pip-audit
+      - name: Unit tests
+        run: python -m unittest discover -s ml/service/tests -v
+      - name: Ruff
+        run: ruff check ml/service
+      - name: pip-audit
+        run: pip-audit -r ml/service/requirements.txt
+      - name: Image builds
+        run: docker build -f ml/service/Dockerfile -t examory/anomaly-scorer:ci .
 
   python-ml:
     name: Lint Python in ml/ and analytics/
@@ -84,12 +107,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Required files exist
         run: |
-          for f in README.md docs/03_architecture/architecture.md docs/03_architecture/events.md docker-compose.yml .env.example gateway/nginx.conf; do
+          for f in README.md docs/03_architecture/architecture.md docs/03_architecture/events.md docker-compose.yml docker-compose.research.yml .env.example gateway/nginx.conf; do
             test -f "$f" || { echo "missing $f"; exit 1; }
           done
       - name: Compose file is valid
         run: |
           cp .env.example .env
           docker compose config -q
+          docker compose -f docker-compose.yml -f docker-compose.research.yml config -q
       - name: Event schemas are valid JSON
         run: for f in docs/03_architecture/schemas/*.json; do python3 -m json.tool "$f" > /dev/null || exit 1; done

@@ -42,6 +42,8 @@ services:
       PGDATABASE: examory
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?run make dev-env}
       QUIZZES_DB_PASSWORD: ${QUIZZES_DB_PASSWORD:?run make dev-env}
+      GRADING_DB_PASSWORD: ${GRADING_DB_PASSWORD:?run make dev-env}
+      ANOMALY_DB_PASSWORD: ${ANOMALY_DB_PASSWORD:?run make dev-env}
     volumes:
       - ./deploy/postgres/init-databases.sh:/init/init-databases.sh:ro
     read_only: true
@@ -202,6 +204,64 @@ services:
       auth:
         condition: service_healthy
 
+  grading:
+    <<: *hardened
+    build:
+      context: ./services
+      dockerfile: grading/Dockerfile
+    image: examory/grading:dev
+    environment:
+      GRADING_HTTP_ADDR: ":8080"
+      GRADING_DATABASE_URL: postgres://grading_svc:${GRADING_DB_PASSWORD:?run make dev-env}@postgres:5432/grading?sslmode=disable
+      GRADING_REDIS_ADDR: redis:6379
+      GRADING_REDIS_PASSWORD: ${REDIS_PASSWORD:?run make dev-env}
+      GRADING_KAFKA_BROKERS: kafka:19092
+      GRADING_JWKS_URL: http://auth:8080/.well-known/jwks.json
+      GRADING_TRUSTED_PROXIES: 172.16.0.0/12
+    healthcheck:
+      test: ["CMD", "/grading", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      auth:
+        condition: service_healthy
+
+  # Anomaly scorer (Python). Needs a model artifact: run `make anomaly-model` first.
+  anomaly-scorer:
+    <<: *hardened
+    build:
+      context: .
+      dockerfile: ml/service/Dockerfile
+    image: examory/anomaly-scorer:dev
+    environment:
+      ANOMALY_DATABASE_URL: postgresql://anomaly_svc:${ANOMALY_DB_PASSWORD:?run make dev-env}@postgres:5432/anomaly
+      ANOMALY_KAFKA_BROKERS: kafka:19092
+      ANOMALY_MODEL_PATH: /model/model.pkl
+      ANOMALY_MODEL_SHA256: ${ANOMALY_MODEL_SHA256:-}
+      ANOMALY_LATENESS_SECONDS: "5"
+    volumes:
+      - ./ml/service/model:/model:ro
+    tmpfs:
+      - /tmp:size=64m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
   gateway:
     <<: *hardened
     image: nginxinc/nginx-unprivileged:1.28-alpine
@@ -220,6 +280,8 @@ services:
       auth:
         condition: service_healthy
       quizzes:
+        condition: service_healthy
+      grading:
         condition: service_healthy
 
 volumes:

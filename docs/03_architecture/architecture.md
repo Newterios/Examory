@@ -65,6 +65,8 @@ Students, Teachers, Administrators
 
 Stage-2 note (LMS-38): for M4 the minimal `users` responsibilities (admin-provisioned accounts, roles, groups, membership, `user.created`, `group.updated`) are implemented inside `auth`; they move to `users` when it is split out. Both services use the transactional outbox in `services/platform`.
 
+Stage-2 note (M4): `grading` currently stores `risk.behavior_anomaly` signals and the teacher review (`risk.reviewed`); rubrics and grades (FR-16, FR-17) are not built yet. The behavioral anomaly module runs as `ml/service` (Python, own database `anomaly`), which wraps the frozen baseline in `ml/anomaly/` and publishes to `ai.risk`.
+
 ### 3.2 Exam session client agent (Go, Windows) — Kaiyrbekuly A.
 
 Runs only during an exam session after the student's consent. Checks running processes, virtual cameras, remote-access tools, virtual machines and screen recorders through WMI and sends `exam.agent_signal` events. It never blocks anything on the student's machine; it only reports.
