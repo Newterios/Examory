@@ -22,6 +22,9 @@ and mechanism file, the simulator binary and source tree, library versions and w
 | `run.py` | stage CLI |
 | `ednet.py` | EdNet stage (P1 transfer, P2 refit, realism) |
 | `analyze.py` | aggregation, Markdown tables, figures |
+| `supervised.py` | post hoc stage `supervised`: supervised classifiers on the frozen feature table |
+| `similarity.py` | post hoc stage `similarity`: answer-similarity detector AnswerSim |
+| `posthoc.py` | aggregation, tables and figure F7 of the two post hoc stages |
 | `compact.py` | compact committed stage format and its inverse |
 | `results_defaults/` | appendix: uncalibrated-defaults run of 14 Nov 2026 |
 | `results/` | committed outputs: `stages/*.json`, `summary.json`, `tables/*.md`, `figures/*.{png,pdf}` |
@@ -46,6 +49,10 @@ $PY -m ml.experiments.inflation.run sensitivity        # 40 LHS configs × 3 see
 $PY -m ml.experiments.inflation.run prevalence         # anomaly-rate 0.0167
 $PY -m ml.experiments.inflation.run ednet --ednet-csv ml/datasets/raw/ednet/derived/<file>.csv
 $PY -m ml.experiments.inflation.analyze                # summary.json, tables, figures
+
+# post hoc, exploratory (amendment of 15 Nov 2026); rerun analyze afterwards
+$PY -m ml.experiments.inflation.run supervised         # 20 seeds × 6 train→test cells
+$PY -m ml.experiments.inflation.run similarity         # 20 seeds × {LEGACY, SIM-FI, SIM-BL, SIM-HONEST}
 ```
 
 Simulator parameters: `ml/ednet/calibration.json` when it exists, else
@@ -148,6 +155,22 @@ correction or decision rule changed):
 7. Figure labels: "Legacy generator", "Feature-aligned injection (simulated normals)", "Behaviour-level
    cheating"; detectors "Rules" (quantile_rules), "IF" (iforest_no_peers), "IF + peers" (iforest).
 
+Amendment of 15 Nov 2026 (post hoc, coordinator request): the stages `supervised` and `similarity`
+below were added **after the main results had been seen**. They are exploratory: their results do not
+enter the primary endpoint, H1 or any Holm family, and their p-values are unadjusted. Their definitions
+were fixed in the request before they were run and were not tuned afterwards: (a) `supervised` — the
+frozen 15-/12-feature table, HistGradientBoostingClassifier (defaults, `random_state = seed`; primary) and
+LogisticRegression on standardized features (defaults), no hyper-parameter search, threshold by
+`choose_threshold` on the training world's validation cohorts, cells train ∈ {SIM-FI, SIM-BL, LEGACY} ×
+test ∈ {SIM-FI, SIM-BL}, and the three contrasts listed below; (b) `similarity` — the AnswerSim statistic
+and its incorrect-answers variant as defined below, plugged into the main protocol. Choices made while
+implementing them (before the 20-seed runs; a 2-seed smoke run preceded them) are listed in the stage
+descriptions (pairs of the same student excluded; answer key recovered from scores; no-partner score;
+target-world features built with the training world's reference). After the smoke run only presentation
+changed (LEGACY → SIM-BL left out of figure F7 because its realized FPR is not near 5 %). No existing
+stage, metric, test, decision rule, stage file, table or figure was changed; `summary.json` only gained the
+keys `supervised` and `similarity` (and its provenance fields were refreshed).
+
 **Transfer.** Fit (reference + model + threshold) on condition X, apply to test cohorts of Y
 for (LEGACY→SIM-BL), (SIM-FI→SIM-BL), (SIM-BL→SIM-FI), (LEGACY→SIM-FI) and the diagonals;
 report realized FPR and recall ("what a team that validated on X would see on Y").
@@ -178,6 +201,42 @@ added as the second peer-free detector. Realism: HistGradientBoosting C2ST real-
 BASE_FEATURES, 5-fold StratifiedGroupKFold by user, AUC with user-bootstrap CI, per-feature KS
 and Wasserstein/SD(EdNet). EdNet is subsampled to whole cohorts (≤ 30 000 attempts, fixed seed)
 when larger; C2ST uses ≤ 6 000 attempts per class.
+
+**Supervised (post hoc, exploratory).** Question: how much of the cheating is recoverable from the
+frozen features when labels are available (an information ceiling for this feature set), and what a
+supervised detector trained on feature-injected labels achieves on behaviour-level cheating. Feature
+table exactly as in the transfer stage: `build_features` with the *training* world's normal-train
+reference (via `train.train`), peers computed within the target world; model matrix `train.matrix`
+(log transform, missing indicators, medians from the training world's train-cohort rows) on all 15
+features (`hgb`, `logreg`) or the 12 attempt features (`*_no_peers`), mirroring "IF + peers" vs "IF".
+Labels: attempt-level any-cheating vs none from the training world's `truth.csv` (`is_anomaly`, checked
+against the CSV label; LEGACY: the CSV label), all train-cohort attempts. Thresholds: `choose_threshold`
+(5 % and 1 %) on the training world's validation cohorts; metrics: `evaluate_table` on the target world's
+test cohorts (recall per type, realized FPR, ROC-AUC, standardized pAUC, sync/non-sync copy_peer split).
+Cells: SIM-FI→SIM-FI, SIM-FI→SIM-BL, SIM-BL→SIM-FI, SIM-BL→SIM-BL, LEGACY→SIM-FI, LEGACY→SIM-BL (LEGACY
+uses the same code path; its realized FPR on SIM targets is far above 5 %, as in the transfer stage, so
+its recall is not at a 5 % operating point). Contrasts, paired by seed (bootstrap CI, Wilcoxon,
+unadjusted), overall and per slot, for every model (primary: `hgb` with 15 features): (1) recall(FI→FI) −
+recall(FI→BL); (2) recall(BL→BL) − recall(FI→BL); (3) recall(BL→BL) − recall of the best unsupervised
+detector of the main stage on SIM-BL (the one of Rules / IF / IF + peers with the highest mean recall on
+that subset; same seeds and data, verified by CSV hash). Outputs: `tables/supervised.md`,
+`figures/F7_supervised.{png,pdf}`, `summary.json → supervised`.
+
+**Similarity (post hoc, exploratory).** Question: is behaviour-level copying detectable by a classical
+answer-similarity statistic that does not use submission-time synchrony? AnswerSim: for attempts i, j of
+*different students* in the same cohort on the same quiz/variant sharing an item set S with |S| ≥ 10,
+m_k = 1 if both final selected options on item k are identical; p_k = Σ_o f_ko², f_ko the relative
+frequency of option o on item k among all train-cohort attempts (no labels);
+z_ij = (Σ m_k − Σ p_k) / √(Σ p_k(1 − p_k)); attempt score = max_j z_ij; attempts with no eligible partner
+score −10⁹ (below every attainable z). Secondary variant `answersim_incorrect`: the same sums over the
+items of S on which attempt i's final answer is incorrect. The event log has no answer key; it is
+recovered per item from the submitted scores (the option whose choosers have the highest mean score) and
+accepted only if it reproduces the score of every attempt exactly (it did in all 80 runs). Threshold,
+metrics and breakdowns as in the main stage, for LEGACY, SIM-FI, SIM-BL and the honest world (FPR only).
+Item sharing: the main configuration uses the simulator's default `--item-sampling fixed`, so all
+attempts share the same 20 items (|S| = 20, 57 eligible partners per attempt). The statistic is then a
+monotone function of the match count and takes few distinct values, so the realized operating point lies
+below 5 % FPR. Outputs: `tables/similarity.md`, `summary.json → similarity`.
 
 ## Leakage and integrity guards
 

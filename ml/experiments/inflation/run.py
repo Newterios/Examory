@@ -1,6 +1,7 @@
 """Experiment stages.
 
 python -m ml.experiments.inflation.run main|transfer|robust-detectors|dose|sensitivity|prevalence|ednet
+python -m ml.experiments.inflation.run supervised|similarity      (post hoc, exploratory; README amendment log)
 """
 from __future__ import annotations
 
@@ -231,6 +232,12 @@ def _seed_job(job: tuple[int, dict[str, Any]]) -> list[dict[str, Any]]:
     seed, cfg = job
     if cfg["stage"] == "transfer":
         return transfer_worker(seed, cfg)
+    if cfg["stage"] == "supervised":
+        from .supervised import supervised_worker
+        return supervised_worker(seed, cfg)
+    if cfg["stage"] == "similarity":
+        from .similarity import similarity_worker
+        return similarity_worker(seed, cfg)
     return evaluate_worker(seed, cfg)
 
 
@@ -272,7 +279,7 @@ def write_mechanisms(values: dict[str, float], base: Path, path: Path) -> Path:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("stage", choices=["main", "transfer", "robust-detectors", "dose", "sensitivity",
-                                          "prevalence", "ednet"])
+                                          "prevalence", "ednet", "supervised", "similarity"])
     parser.add_argument("--seeds", type=int, nargs="+", default=None,
                         help="default 1001..1020 (dose: 1001..1010; sensitivity: 1001..1003)")
     parser.add_argument("--conditions", nargs="+", choices=CONDITIONS, default=None,
@@ -324,6 +331,8 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
 def _run_simulation_stage(args: argparse.Namespace, binary: Path) -> dict[str, Any]:
     from ml.experiments.inflation import common
     have_sim = binary.exists()
+    if args.stage in ("supervised", "similarity") and args.from_cache:
+        raise SystemExit(f"{args.stage} does not support --from-cache (it always refits and rescores)")
     if args.stage in ("dose", "sensitivity") and not have_sim:
         raise SystemExit(f"{args.stage} needs the simulator binary {relative(binary)}")
     conditions = tuple(args.conditions) if args.conditions else (CONDITIONS if have_sim else ("LEGACY",))
@@ -346,6 +355,23 @@ def _run_simulation_stage(args: argparse.Namespace, binary: Path) -> dict[str, A
         pairs = [p for p in TRANSFER_PAIRS if p[0] in conditions and p[1] in conditions]
         cfg["pairs"] = pairs
         extra["pairs"] = pairs
+        runs = [r for chunk in _map(_seed_job, [(s, cfg) for s in seeds], args.workers) for r in chunk]
+    elif args.stage == "supervised":
+        from .supervised import MAX_ITER, PAIRS
+        pairs = [p for p in PAIRS if p[0] in conditions and p[1] in conditions]
+        cfg["pairs"] = pairs
+        extra.update({"pairs": pairs, "models": {
+            "hgb": "HistGradientBoostingClassifier(random_state=seed), sklearn defaults",
+            "logreg": f"StandardScaler + LogisticRegression(max_iter={MAX_ITER}), sklearn defaults"},
+            "feature_sets": {"": "FEATURE_COLUMNS (12 attempt + 3 peer)", "_no_peers": "BASE_FEATURES (12)"},
+            "post_hoc": True})
+        runs = [r for chunk in _map(_seed_job, [(s, cfg) for s in seeds], args.workers) for r in chunk]
+    elif args.stage == "similarity":
+        from .similarity import MIN_SHARED_ITEMS, NO_PARTNER_SCORE
+        if any(c.startswith("SIM-") for c in conditions):
+            cfg["conditions"] = (*conditions, "SIM-HONEST")
+        extra.update({"min_shared_items": MIN_SHARED_ITEMS, "no_partner_score": NO_PARTNER_SCORE,
+                      "item_sampling": cfg.get("item_sampling") or "simulator default (fixed)", "post_hoc": True})
         runs = [r for chunk in _map(_seed_job, [(s, cfg) for s in seeds], args.workers) for r in chunk]
     elif args.stage == "dose":
         cfg["conditions"] = ("SIM-FI", "SIM-BL")

@@ -32,9 +32,13 @@ STAGE_FIELDS = {
                    "ci_recall_low", "ci_recall_high"],
     "robust-detectors": ["n_pos", "n_neg", "recall@5", "fpr@5", "precision@5", "recall@1", "fpr@1", "roc_auc",
                          "pauc_std", "average_precision", "ci_recall_low", "ci_recall_high"],
+    "supervised": ["n_pos", "n_neg", "recall@5", "fpr@5", "precision@5", "recall@1", "fpr@1", "roc_auc",
+                   "pauc_std", "average_precision", "ci_recall_low", "ci_recall_high"],
+    "similarity": ["n_pos", "n_neg", "recall@5", "fpr@5", "precision@5", "recall@1", "fpr@1", "roc_auc",
+                   "pauc_std", "average_precision", "ci_recall_low", "ci_recall_high"],
 }
 RUN_KEYS = ("seed", "condition", "source", "target", "tag", "config_id", "intensity", "split_counts",
-            "manipulation", "wall_seconds")
+            "manipulation", "eligibility", "fit", "wall_seconds")
 
 
 def _get(row: dict[str, Any] | None, path: tuple[str, ...]) -> Any:

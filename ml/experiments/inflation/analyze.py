@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from . import posthoc
 from .common import (
     BL_TYPES,
     CONDITIONS,
@@ -979,6 +980,19 @@ def analyze(stages_dir: Path, out_dir: Path, figures: bool = True) -> dict[str, 
         write("ednet", md_ednet(result))
         if figures:
             summary["figures"] += figure_ednet(result, figures_dir)
+    # Post hoc, exploratory stages (README amendment of 15 Nov 2026); appended after the pre-planned ones.
+    supervised = load("supervised")
+    if supervised:
+        result = posthoc.supervised_summary(supervised, main, series)
+        summary["supervised"] = result
+        write("supervised", posthoc.md_supervised(result, fmt_ci, fmt_p, table))
+        if figures:
+            summary["figures"] += posthoc.figure_supervised(result, summary.get("main"), figures_dir, _plt, save)
+    similarity = load("similarity")
+    if similarity:
+        result = posthoc.similarity_summary(similarity, main, series)
+        summary["similarity"] = result
+        write("similarity", posthoc.md_similarity(result, fmt_ci, table))
     write_json(out_dir / "summary.json", summary, compact=True, digits=4)
     return summary
 

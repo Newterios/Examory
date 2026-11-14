@@ -19,8 +19,10 @@ from scipy import stats as scipy_stats
 from sklearn.metrics import roc_auc_score
 
 from ml.anomaly.evaluate import metrics as frozen_metrics
+from ml.anomaly.train import choose_threshold
 from ml.experiments.inflation import analyze as analyze_module
 from ml.experiments.inflation import run as run_module
+from ml.experiments.inflation import similarity, supervised
 from ml.experiments.inflation.common import (
     BL_TYPES,
     FI_TYPES,
@@ -343,6 +345,151 @@ class EndToEndTests(unittest.TestCase):
             csv.writer(handle).writerows(rows[:-1])
         with self.assertRaises(IntegrityError):
             self.stage("main", exp, self.root / "sim_stages_bad", *sim, seeds=("3",))
+
+
+def _attempt(attempt_id: str, user: str, group: str, answers: list[str], score: float | None = None) -> dict:
+    hashes = {f"q{k:02d}": a for k, a in enumerate(answers)}
+    return {"attempt_id": attempt_id, "user_id": user, "group_id": group, "quiz_id": "quiz_001",
+            "variant_id": "variant_001", "final_hashes": hashes,
+            "score_percent": 0.0 if score is None else score}
+
+
+class SimilarityTests(unittest.TestCase):
+    def test_null_probability(self) -> None:
+        train = [_attempt("t1", "u1", "g", ["a", "a"]), _attempt("t2", "u2", "g", ["b", "a"]),
+                 _attempt("t3", "u3", "g", ["a", "a"]), _attempt("t4", "u4", "g", ["c", "a"])]
+        p = similarity.null_match_probability(similarity.option_frequencies(train))
+        key = lambda q: json.dumps(["quiz_001", "variant_001", q])
+        self.assertAlmostEqual(p[key("q00")], 0.5 ** 2 + 0.25 ** 2 + 0.25 ** 2)
+        self.assertAlmostEqual(p[key("q01")], 1.0)
+
+    def test_z_statistic_hand_computed(self) -> None:
+        # Train frequencies: options a/b at 50 % on each of 10 items -> p_k = 0.5, sum p = 5, sum p(1-p) = 2.5.
+        train = [_attempt("t1", "u1", "g1", ["a"] * 10), _attempt("t2", "u2", "g1", ["b"] * 10)]
+        null = similarity.null_match_probability(similarity.option_frequencies(train))
+        i = _attempt("i", "s1", "g2", ["b"] * 4 + ["a"] * 6)         # wrong (key a) on items 0-3
+        j = _attempt("j", "s2", "g2", ["b"] * 4 + ["a"] * 4 + ["b"] * 2)   # matches i on items 0-7
+        same_user = _attempt("i2", "s1", "g2", ["b"] * 4 + ["a"] * 6)  # identical, same student: not a partner
+        alone = _attempt("k", "s3", "g3", ["a"] * 10)                 # no other student in its cohort
+        short = _attempt("m", "s4", "g4", ["a"] * 9)
+        short_partner = _attempt("n", "s5", "g4", ["a"] * 9)          # |S| = 9 < 10
+        attempts = [i, j, same_user, alone, short, short_partner]
+        keys = {json.dumps(["quiz_001", "variant_001", f"q{k:02d}"]): "a" for k in range(10)}
+        result = similarity.answer_similarity(attempts, null, keys)
+        z = (8 - 5) / np.sqrt(2.5)
+        scores = result["scores"]["answersim"]
+        self.assertAlmostEqual(scores[0], z)
+        self.assertAlmostEqual(scores[1], z)
+        self.assertAlmostEqual(scores[2], z)   # i2 pairs with j (different student), never with i
+        self.assertEqual(scores[3], similarity.NO_PARTNER_SCORE)
+        self.assertEqual(scores[4], similarity.NO_PARTNER_SCORE)
+        self.assertEqual(scores[5], similarity.NO_PARTNER_SCORE)
+        # Incorrect-only for i: items 0-3, all matched: (4 - 2) / sqrt(1) = 2.
+        incorrect = result["scores"]["answersim_incorrect"]
+        self.assertAlmostEqual(incorrect[0], 2.0)
+        # j is wrong on items 0-3 and 8-9; matches i on 0-3 only: (4 - 3) / sqrt(1.5).
+        self.assertAlmostEqual(incorrect[1], 1 / np.sqrt(1.5))
+        self.assertEqual(incorrect[3], similarity.NO_PARTNER_SCORE)  # all correct: no wrong items
+        self.assertEqual(list(result["eligible_partners"][:4]), [1, 2, 1, 0])
+        self.assertAlmostEqual(similarity.pair_z(np.array(list("bbbbaaaaaa")), np.array(list("bbbbaaaabb")),
+                                                 np.full(10, 0.5), np.ones(10, dtype=bool)), z)
+
+    def test_infer_keys(self) -> None:
+        attempts = [_attempt("a1", "u1", "g", ["a", "b", "c"], 100 * 3 / 3),
+                    _attempt("a2", "u2", "g", ["a", "c", "c"], 100 * 2 / 3),
+                    _attempt("a3", "u3", "g", ["d", "c", "b"], 0.0),
+                    _attempt("a4", "u4", "g", ["a", "b", "b"], 100 * 2 / 3)]
+        keys = similarity.infer_keys(attempts)
+        self.assertEqual(sorted(keys.values()), ["a", "b", "c"])
+        attempts[2]["score_percent"] = 100 / 3
+        with self.assertRaises(IntegrityError):
+            similarity.infer_keys(attempts)
+
+
+class SupervisedTests(unittest.TestCase):
+    @staticmethod
+    def fixture(seed: int = 0):
+        import pandas as pd
+
+        from ml.anomaly.features import FEATURE_COLUMNS
+        rng = np.random.default_rng(seed)
+        n = 600
+        frame = pd.DataFrame(rng.lognormal(size=(n, len(FEATURE_COLUMNS))), columns=FEATURE_COLUMNS)
+        frame["history_missing"] = (rng.random(n) < 0.3).astype(int)
+        frame["is_anomaly"] = (rng.random(n) < 0.15).astype(int)
+        frame.loc[frame.is_anomaly == 1, "changes_count"] += 30.0  # signal in an attempt feature
+        frame["split"] = np.repeat([0, 1, 2], n // 3)
+        frame["truth_is_anomaly"] = frame.is_anomaly.astype(str)
+        return frame
+
+    def test_fit_threshold_and_determinism(self) -> None:
+        frame = self.fixture()
+        first = supervised.fit_supervised(frame, seed=11)
+        second = supervised.fit_supervised(frame, seed=11)
+        self.assertEqual(set(first), set(supervised.DETECTORS))
+        validation = frame[frame.split == 1]
+        for name, model in first.items():
+            point = model["operating_points"]["0.05"]
+            self.assertLessEqual(point["validation_fpr"], 0.05 + 1e-12)
+            self.assertEqual(point, choose_threshold(validation.is_anomaly.to_numpy(),
+                                                     model["detector"].score(validation), 0.05))
+            scores = model["detector"].score(frame)
+            self.assertTrue(np.all((scores >= 0) & (scores <= 1)))
+            np.testing.assert_array_equal(scores, second[name]["detector"].score(frame))
+        self.assertGreater(first["hgb"]["operating_points"]["0.05"]["validation_recall"], 0.5)
+        self.assertTrue(first["logreg"]["detector"].info["converged"])
+        self.assertEqual(first["hgb_no_peers"]["detector"].columns, supervised.FEATURE_SETS["_no_peers"])
+
+    def test_label_check(self) -> None:
+        frame = self.fixture()
+        frame.loc[0, "truth_is_anomaly"] = str(1 - frame.is_anomaly[0])
+        with self.assertRaises(IntegrityError):
+            supervised.training_labels(frame)
+
+
+class PostHocStageTests(unittest.TestCase):
+    """supervised and similarity stages end to end with the stub simulator."""
+
+    def test_stages_with_stub(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="examory-posthoc-") as directory:
+            root = Path(directory)
+            stub = root / "examory-sim"
+            stub.write_text(STUB.format(python=sys.executable,
+                                        generator=REPO / "ml/datasets/generate_quiz_behavior.py"))
+            stub.chmod(0o755)
+            exp, stages = root / "exp", root / "stages"
+            common = ["--students", "200", "--seeds", "5", "--workers", "1", "--exp-root", str(exp),
+                      "--sim-binary", str(stub)]
+            run_module.main(["main", *common, "--output", str(stages / "main.json")])
+            sup = run_module.main(["supervised", *common, "--output", str(stages / "supervised.json")])
+            sim = run_module.main(["similarity", *common, "--output", str(stages / "similarity.json")])
+            again = run_module.main(["similarity", *common, "--output", str(root / "again.json")])
+            self.assertEqual(list((exp / "data").glob("*/*/*.csv")), [])
+            self.assertEqual({(r["source"], r["target"]) for r in sup["runs"]}, set(supervised.PAIRS))
+            for run in sup["runs"]:
+                self.assertEqual(set(run["metrics"]), set(supervised.DETECTORS))
+                for points in run["operating_points"].values():
+                    self.assertLessEqual(points["0.05"]["validation_fpr"], 0.05 + 1e-12)
+            # The stub's SIM-FI equals LEGACY, so LEGACY->FI and FI->FI coincide.
+            by = {(r["source"], r["target"]): r for r in sup["runs"]}
+            self.assertEqual(by[("LEGACY", "SIM-FI")]["metrics"]["hgb"]["all"]["at_0.05"],
+                             by[("SIM-FI", "SIM-FI")]["metrics"]["hgb"]["all"]["at_0.05"])
+            self.assertEqual({r["condition"] for r in sim["runs"]}, {"LEGACY", "SIM-FI", "SIM-BL", "SIM-HONEST"})
+            for run in sim["runs"]:
+                self.assertTrue(run["eligibility"]["answer_key"]["verified"])
+                self.assertEqual(run["eligibility"]["max_shared_items_with_another_student"]["min"], 20)
+            self.assertEqual(strip_timing(sim["runs"]), strip_timing(again["runs"]))
+            summary = analyze_module.analyze(stages, root / "out", figures=True)
+            self.assertTrue(summary["supervised"]["main_pairing"]["all_matched"])
+            names = {c["contrast"] for c in summary["supervised"]["contrasts"]}
+            self.assertEqual(names, {"FI→FI − FI→BL", "BL→BL − FI→BL", "BL→BL − best unsupervised on BL"})
+            self.assertIn("SIM-BL|answersim|slot:S3", summary["similarity"]["cells"])
+            for name in ("supervised.md", "similarity.md"):
+                self.assertTrue((root / "out/tables" / name).exists())
+            self.assertTrue((root / "out/figures/F7_supervised.png").exists())
+            committed = expand_stage(read_json(stages / "supervised.json"))
+            self.assertAlmostEqual(committed["runs"][0]["metrics"]["hgb"]["all"]["at_0.05"]["recall"],
+                                   sup["runs"][0]["metrics"]["hgb"]["all"]["at_0.05"]["recall"], places=5)
 
 
 if __name__ == "__main__":
