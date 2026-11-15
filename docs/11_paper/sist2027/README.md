@@ -23,8 +23,8 @@ The paper fits Track 4, Computational Intelligence: "Applications of Computation
 | PDF, at most 10 MB, uploaded to CMT | CMT guidelines | met: `paper.pdf` |
 | Structure: title, abstract, keywords, affiliations; introduction, related work, methods, results (and future work), conclusion; acknowledgment optional; references | guidelines | met; Section V is "Discussion and Future Work" |
 | Title in title case, no symbols or math in title and abstract | template | met |
-| At least 10 references | call for papers | met: 30 |
-| At least 30 % of references from Scopus or Web of Science | call for papers | expected to be met: 23 of the 30 references are journal articles (Springer, Wiley, SAGE, IEEE, ACM, Elsevier, Frontiers, MDPI, PLOS) and 9 are needed; confirm the indexing of the final list in Scopus before submission |
+| At least 10 references | call for papers | met: 32 |
+| At least 30 % of references from Scopus or Web of Science | call for papers | expected to be met: 24 of the 32 references are journal articles (Springer, Wiley, SAGE, IEEE, ACM, Elsevier, Frontiers, MDPI, PLOS, MIT Press) and 10 are needed; confirm the indexing of the final list in Scopus before submission |
 | Self-citations at most 20 % | call for papers | met: none |
 | At most 6 authors; one author may submit up to 3 papers | call for papers | to confirm (see below) |
 | References numbered in order of citation; "et al." for six or more authors | template | met: `IEEEtran.bst` with the control entry in `refs.bib` |
