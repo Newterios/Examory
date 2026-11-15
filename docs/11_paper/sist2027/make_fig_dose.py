@@ -18,8 +18,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from ml.experiments.inflation import analyze, review_analysis  # noqa: E402
-from ml.experiments.inflation.common import DETECTORS, SLOTS  # noqa: E402
+from ml.experiments.inflation import analyze, review_analysis
+from ml.experiments.inflation.common import DETECTORS, SLOTS
 
 RESULTS = ROOT / "ml/experiments/inflation/results"
 OUT = Path(__file__).resolve().parent / "fig_dose.pdf"
@@ -96,7 +96,9 @@ def pick_font() -> str:
 
 def plot(summary: dict, png: Path | None = None) -> None:
     plt = analyze._plt()
-    from matplotlib import patheffects  # Agg backend + the project's rcParams (pdf.fonttype 42)
+    from matplotlib import (
+        patheffects,  # Agg backend + the project's rcParams (pdf.fonttype 42)
+    )
     font = pick_font()
     plt.rcParams.update({"font.family": "serif", "font.serif": [font], "mathtext.fontset": "stix",
                          "pdf.fonttype": 42, "ps.fonttype": 42, "savefig.bbox": "standard",
