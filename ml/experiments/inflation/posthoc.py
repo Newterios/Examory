@@ -3,7 +3,7 @@
 Both stages were added on 15 Nov 2026 after the main results had been seen (README,
 amendment log). Intervals are percentile bootstraps over seeds and paired contrasts use the
 same helpers (``stats.mean_ci``, ``stats.paired_difference``) and analysis seed as ``analyze``.
-p-values are two-sided Wilcoxon signed-rank tests, unadjusted (no Holm family is declared).
+p-values are exact two-sided paired sign-flip permutation tests, unadjusted (no Holm family is declared).
 """
 from __future__ import annotations
 
@@ -19,11 +19,15 @@ SUPERVISED_DETECTORS = ("hgb", "hgb_no_peers", "logreg", "logreg_no_peers")
 SUPERVISED_LABEL = {"hgb": "HGB + peers (15)", "hgb_no_peers": "HGB (12)", "logreg": "LogReg + peers (15)",
                     "logreg_no_peers": "LogReg (12)"}
 PRIMARY = "hgb"
-SIMILARITY_DETECTORS = ("answersim", "answersim_incorrect")
-SIMILARITY_LABEL = {"answersim": "AnswerSim", "answersim_incorrect": "AnswerSim (incorrect only)"}
+SIMILARITY_DETECTORS = ("answersim", "answersim_incorrect", "rt_personfit")
+SIMILARITY_LABEL = {"answersim": "AnswerSim", "answersim_incorrect": "AnswerSim (incorrect only)",
+                    "rt_personfit": "RT person-fit l_t"}
+PREKNOWLEDGE = ("truth:preknowledge:mech_flag=naive", "truth:preknowledge:mech_flag=disguising")
 UNSUPERVISED_LABEL = {"quantile_rules": "Rules", "iforest_no_peers": "IF", "iforest": "IF + peers"}
 SYNC = ("truth:copy_peer:sync_submit=0", "truth:copy_peer:sync_submit=1")
-SYNC_LABEL = {SYNC[0]: "copy_peer, non-sync pairs", SYNC[1]: "copy_peer, sync pairs"}
+SYNC_LABEL = {SYNC[0]: "copy_peer, non-sync pairs", SYNC[1]: "copy_peer, sync pairs",
+              "truth:preknowledge:mech_flag=naive": "preknowledge, naive",
+              "truth:preknowledge:mech_flag=disguising": "preknowledge, disguising"}
 SHORT_SLOT = {"S1": "rapid /\npreknow.", "S2": "changes /\nlookup", "S3": "collusion /\ncopy peer",
               "S4": "score jump /\nproxy"}
 CELL_METRICS = ("recall@5", "fpr@5", "recall@1", "fpr@1", "roc_auc", "pauc_std", "average_precision")
@@ -158,7 +162,7 @@ def md_supervised(summary: dict[str, Any], fmt_ci, fmt_p, table) -> str:
                      UNSUPERVISED_LABEL.get(c.get("comparator"), ""), fmt_ci(c, "recall@5"), str(c["n"]),
                      fmt_p(c["p"])])
     parts += ["## Pre-declared contrasts (recall@5 %, pp; paired by seed)", "",
-              ("Paired percentile-bootstrap CI (10 000 resamples) and two-sided Wilcoxon signed-rank p, "
+              ("Paired percentile-bootstrap CI (10 000 resamples) and exact two-sided sign-flip permutation p, "
                "unadjusted. Slot rows compare the slot's FI type in FI→FI with its BL mechanism in FI→BL. "
                "'Best unsupervised' = the main-stage detector (Rules, IF, IF + peers) with the highest mean "
                "SIM-BL recall on that subset (chosen on the same seeds, which favours the comparator)."), "",
@@ -181,7 +185,7 @@ def similarity_summary(stage: dict[str, Any], main: dict[str, Any] | None, serie
     cells: dict[str, Any] = {}
     for condition in conditions:
         subsets = ["all", "final"] + ([f"slot:{s}" for s in SLOTS] if condition != "SIM-HONEST" else []) + (
-            list(SYNC) if condition == "SIM-BL" else [])
+            list(SYNC) + list(PREKNOWLEDGE) if condition == "SIM-BL" else [])
         for detector in SIMILARITY_DETECTORS:
             for subset in subsets:
                 values = {m: mean_ci(series(runs, seeds, detector, subset, m, condition=condition), seed=7)
@@ -211,7 +215,7 @@ def similarity_summary(stage: dict[str, Any], main: dict[str, Any] | None, serie
     if main:
         main_seeds = sorted(set(main["seeds"]))
         for detector in DETECTORS:
-            for subset in ("all", "slot:S3", *SYNC):
+            for subset in ("all", "slot:S1", *PREKNOWLEDGE, "slot:S3", *SYNC):
                 reference[f"SIM-BL|{detector}|{subset}"] = mean_ci(
                     series(main["runs"], main_seeds, detector, subset, "recall@5", condition="SIM-BL"), seed=7)
             for condition in ("SIM-FI", "LEGACY"):
@@ -224,13 +228,19 @@ def similarity_summary(stage: dict[str, Any], main: dict[str, Any] | None, serie
 
 def md_similarity(summary: dict[str, Any], fmt_ci, table) -> str:
     conditions = [c for c in summary["conditions"] if c != "SIM-HONEST"]
-    parts = ["# Post hoc: answer-similarity detector AnswerSim (exploratory)", "",
+    parts = ["# Post hoc: classical baselines AnswerSim and response-time person-fit (exploratory)", "",
              ("**Added after the main results had been seen (amendment of 15 Nov 2026); exploratory.** For two "
               "attempts of different students in the same cohort and quiz sharing ≥ 10 items: z = (matches − Σ p_k) / "
               "√Σ p_k(1 − p_k), p_k = Σ_o f_ko² from the option frequencies of all train-cohort attempts (no labels); "
               "attempt score = max over partners. Secondary: the same sum over items where the scored attempt's "
               "final answer is wrong (key recovered from the submitted scores and verified on every attempt). "
-              "Submission times are not used. Same protocol as the main stage: threshold = max validation recall "
+              "Submission times are not used. RT person-fit (added after independent review, 15 Nov 2026; "
+              "pre-knowledge baseline): ln t_ik = β_k − τ_i + ε_ik fitted on all train-cohort attempts by alternating "
+              "means (no labels), σ_k = SD of item k's residuals; for any attempt τ_i = mean_k(β_k − ln t_ik), "
+              "z_ik = (ln t_ik − (β_k − τ_i))/σ_k, score l_t = Σ_k z_ik² (Marianti et al., 2014); t_ik = "
+              "`time_since_shown_ms` of the item's first answer event (first-answer latency; answer changes and "
+              "follow-up events after the student moved to other items are not part of t_ik). "
+              "Same protocol as the main stage: threshold = max validation recall "
               "s.t. validation FPR ≤ 5 %, metrics on test cohorts; mean over seeds [95 % CI]; recall and FPR in %."),
              ""]
     elig = summary["eligibility"]
@@ -249,7 +259,7 @@ def md_similarity(summary: dict[str, Any], fmt_ci, table) -> str:
                           ("pauc_std", "Standardized partial AUC, FPR ∈ [0, 0.05]"), ("roc_auc", "ROC-AUC")):
         rows = []
         for detector in SIMILARITY_DETECTORS:
-            for subset in ["all"] + [f"slot:{s}" for s in SLOTS] + list(SYNC):
+            for subset in ["all"] + [f"slot:{s}" for s in SLOTS] + list(SYNC) + list(PREKNOWLEDGE):
                 name = subset if subset == "all" else (SYNC_LABEL.get(subset)
                                                        or f"{subset[5:]} {SLOT_LABEL[subset[5:]]}")
                 rows.append([SIMILARITY_LABEL[detector], name] + [
@@ -273,13 +283,14 @@ def md_similarity(summary: dict[str, Any], fmt_ci, table) -> str:
     reference = summary.get("main_reference_recall@5") or {}
     if reference:
         rows = []
-        for subset in ("all", "slot:S3", *SYNC):
-            name = "all cheating" if subset == "all" else SYNC_LABEL.get(subset, "S3 copy_peer (all pairs)")
+        for subset in ("all", "slot:S1", *PREKNOWLEDGE, "slot:S3", *SYNC):
+            name = ("all cheating" if subset == "all" else "S1 preknowledge (all)" if subset == "slot:S1"
+                    else SYNC_LABEL.get(subset, "S3 copy_peer (all pairs)"))
             row = [name] + [fmt_ci(summary["cells"].get(f"SIM-BL|{d}|{subset}", {}).get("recall@5"), "recall@5")
                             for d in SIMILARITY_DETECTORS]
             row += [fmt_ci(reference.get(f"SIM-BL|{d}|{subset}"), "recall@5") for d in DETECTORS]
             rows.append(row)
-        parts += ["## SIM-BL: AnswerSim next to the main-stage detectors (recall %, 5 % threshold)", "",
+        parts += ["## SIM-BL: classical baselines next to the main-stage detectors (recall %, 5 % threshold)", "",
                   "Main-stage columns are taken from `main.json` (same seeds and data); descriptive, no test.", "",
                   table(["Subset"] + [SIMILARITY_LABEL[d] for d in SIMILARITY_DETECTORS]
                         + [f"{UNSUPERVISED_LABEL[d]} (main)" for d in DETECTORS], rows,

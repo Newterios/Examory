@@ -2,6 +2,7 @@
 
 python -m ml.experiments.inflation.run main|transfer|robust-detectors|dose|sensitivity|prevalence|ednet
 python -m ml.experiments.inflation.run supervised|similarity      (post hoc, exploratory; README amendment log)
+python -m ml.experiments.inflation.run fi-dose|protocol|baseline   (post hoc, after independent review)
 """
 from __future__ import annotations
 
@@ -91,7 +92,7 @@ def _datasets(seed: int, cfg: dict[str, Any], conditions: tuple[str, ...]) -> di
         worlds = tuple(cfg.get("worlds") or ("honest", "fi", "bl"))
         directory, record = ensure_sim(seed, design, worlds, Path(cfg["params"]), Path(cfg["mechanisms"]),
                                        cfg.get("item_sampling"), cfg.get("intensity"), Path(cfg["exp_root"]),
-                                       Path(cfg["sim_binary"]))
+                                       Path(cfg["sim_binary"]), cfg.get("sim_extra_args"))
         record = dict(record, manifest_sha256=sha256_file(directory / "manifest.json"))
         if cfg.get("manipulation") and "honest" in worlds and "SIM-HONEST" not in sim_conditions:
             sim_conditions = [*sim_conditions, "SIM-HONEST"]
@@ -143,6 +144,7 @@ def evaluate_worker(seed: int, cfg: dict[str, Any], tag: str = "") -> list[dict[
     if "SIM-FI" in datasets and "SIM-BL" in datasets:
         assert_paired(datasets["SIM-FI"], datasets["SIM-BL"], manifests["SIM-FI"], manifests["SIM-BL"])
     runs = []
+    diagnostics: dict[str, Any] = {}
     for condition, dataset in datasets.items():
         workdir = _run_dir(cfg, tag or "default", condition, f"seed_{seed}")
         cache = workdir / "scores.npz"
@@ -152,8 +154,11 @@ def evaluate_worker(seed: int, cfg: dict[str, Any], tag: str = "") -> list[dict[
                 raise IntegrityError(f"{relative(cache)} was scored on a different CSV")
             thresholds, points = meta["thresholds"], meta["operating_points"]
         else:
-            _, frame, models = _fit_condition(dataset, manifests[condition], workdir, cfg["robust"],
-                                              bool(cfg.get("keep_data")))
+            artifact, frame, models = _fit_condition(dataset, manifests[condition], workdir, cfg["robust"],
+                                                     bool(cfg.get("keep_data")))
+            if cfg.get("feature_diagnostics"):
+                from .review import feature_diagnostics
+                diagnostics[condition] = feature_diagnostics(dataset, frame, artifact["reference"])
             scores = score_all(frame, models)
             thresholds, points = threshold_table(models), operating_points(models)
             save_scores(cache, frame, scores, thresholds,
@@ -166,6 +171,11 @@ def evaluate_worker(seed: int, cfg: dict[str, Any], tag: str = "") -> list[dict[
                      "metrics": evaluate_table(table, scores, thresholds, seed, cfg.get("breakdowns", True))})
         if honest is not None and condition in ("SIM-FI", "SIM-BL"):
             runs[-1]["manipulation"] = manipulation_check(dataset, honest)
+        if cfg.get("items_affected") and dataset.truth is not None:
+            from .review import items_affected
+            runs[-1]["items_affected"] = items_affected(dataset)
+        if condition in diagnostics:
+            runs[-1]["feature_diagnostics"] = diagnostics[condition]
     if honest is not None:
         datasets["SIM-HONEST"] = honest
     _cleanup(cfg, datasets)
@@ -238,6 +248,9 @@ def _seed_job(job: tuple[int, dict[str, Any]]) -> list[dict[str, Any]]:
     if cfg["stage"] == "similarity":
         from .similarity import similarity_worker
         return similarity_worker(seed, cfg)
+    if cfg["stage"] == "protocol":
+        from .review import protocol_worker
+        return protocol_worker(seed, cfg)
     return evaluate_worker(seed, cfg)
 
 
@@ -279,9 +292,11 @@ def write_mechanisms(values: dict[str, float], base: Path, path: Path) -> Path:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("stage", choices=["main", "transfer", "robust-detectors", "dose", "sensitivity",
-                                          "prevalence", "ednet", "supervised", "similarity"])
+                                          "prevalence", "ednet", "supervised", "similarity", "fi-dose",
+                                          "protocol", "baseline"])
     parser.add_argument("--seeds", type=int, nargs="+", default=None,
-                        help="default 1001..1020 (dose: 1001..1010; sensitivity: 1001..1003)")
+                        help="default 1001..1020 (dose, fi-dose: 1001..1010; sensitivity: v1 1001..1003, "
+                             "v2 1001..1010)")
     parser.add_argument("--conditions", nargs="+", choices=CONDITIONS, default=None,
                         help="default: all three when the simulator is built, else LEGACY only")
     parser.add_argument("--students", type=int, default=MAIN_DESIGN["students"])
@@ -291,7 +306,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--params", default=None, help="simulator params (default: calibration if present)")
     parser.add_argument("--mechanisms", default=str(SIM_MECHANISMS))
     parser.add_argument("--sim-binary", default=None)
-    parser.add_argument("--configs", type=int, default=40, help="sensitivity: Latin-hypercube size")
+    parser.add_argument("--configs", type=int, default=None, help="sensitivity: Latin-hypercube size (v1 40, v2 60)")
+    parser.add_argument("--design", choices=["v1", "v2"], default="v2",
+                        help="sensitivity design: v2 (default; 14 parameters incl. injection, decorrelated LHS, "
+                             "default configuration) or the original v1")
+    parser.add_argument("--lambdas", type=float, nargs="+", default=None, help="fi-dose: injection multipliers")
+    parser.add_argument("--variants", nargs="+", default=None,
+                        choices=["revision", "per_attempt", "closing_p90", "closing_p75"],
+                        help="baseline variants (default: all; closing_* need --sim-binary-next)")
+    parser.add_argument("--sim-binary-next", default=None,
+                        help="examory-sim >= 0.3.0 for baseline closing_* (default sim/bin/examory-sim-next)")
     parser.add_argument("--intensities", type=float, nargs="+", default=list(INTENSITIES))
     parser.add_argument("--workers", type=int, default=MAX_WORKERS)
     parser.add_argument("--exp-root", default=str(EXP_DATA))
@@ -331,9 +355,9 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
 def _run_simulation_stage(args: argparse.Namespace, binary: Path) -> dict[str, Any]:
     from ml.experiments.inflation import common
     have_sim = binary.exists()
-    if args.stage in ("supervised", "similarity") and args.from_cache:
+    if args.stage in ("supervised", "similarity", "fi-dose", "protocol", "baseline") and args.from_cache:
         raise SystemExit(f"{args.stage} does not support --from-cache (it always refits and rescores)")
-    if args.stage in ("dose", "sensitivity") and not have_sim:
+    if args.stage in ("dose", "sensitivity", "fi-dose", "baseline") and not have_sim:
         raise SystemExit(f"{args.stage} needs the simulator binary {relative(binary)}")
     conditions = tuple(args.conditions) if args.conditions else (CONDITIONS if have_sim else ("LEGACY",))
     if any(c.startswith("SIM-") for c in conditions) and not have_sim:
@@ -343,7 +367,9 @@ def _run_simulation_stage(args: argparse.Namespace, binary: Path) -> dict[str, A
         PREVALENCE_RATE if args.stage == "prevalence" else MAIN_DESIGN["anomaly_rate"])
     design = {"students": args.students, "attempts": args.attempts, "questions": args.questions,
               "anomaly_rate": rate}
-    default_seeds = {"dose": DEFAULT_SEEDS[:10], "sensitivity": DEFAULT_SEEDS[:3]}.get(args.stage, DEFAULT_SEEDS)
+    default_seeds = {"dose": DEFAULT_SEEDS[:10], "fi-dose": DEFAULT_SEEDS[:10],
+                     "sensitivity": DEFAULT_SEEDS[:10] if args.design == "v2" else DEFAULT_SEEDS[:3]
+                     }.get(args.stage, DEFAULT_SEEDS)
     seeds = args.seeds or default_seeds
     cfg = {"stage": args.stage, "design": design, "params": str(params), "mechanisms": args.mechanisms,
            "exp_root": args.exp_root, "sim_binary": str(binary), "conditions": conditions,
@@ -379,10 +405,61 @@ def _run_simulation_stage(args: argparse.Namespace, binary: Path) -> dict[str, A
         jobs = [(i, s, cfg) for i in args.intensities for s in seeds]
         runs = [r for chunk in _map(_dose_worker, jobs, args.workers) for r in chunk]
         extra["intensities"] = args.intensities
+    elif args.stage == "fi-dose":
+        from .review import (
+            FI_DOSE_LAMBDAS,
+            FI_DOSE_PARAMETERS,
+            fi_dose_worker,
+            file_record,
+            write_fi_dose_mechanisms,
+        )
+        lambdas = args.lambdas or list(FI_DOSE_LAMBDAS)
+        directory = Path(args.exp_root) / "fi_dose_mechanisms"
+        cfg.update({"conditions": ("SIM-FI", "SIM-BL"), "manipulation": True, "items_affected": True,
+                    "breakdowns": False, "fi_mechanisms": {
+                        str(lam): str(write_fi_dose_mechanisms(lam, Path(args.mechanisms),
+                                                               directory / f"lambda_{lam}.json"))
+                        for lam in lambdas}})
+        jobs = [("fi", lam, s, cfg) for lam in lambdas for s in seeds]
+        jobs += [("bl", x, s, cfg) for x in args.intensities for s in seeds]
+        runs = [r for chunk in _map(fi_dose_worker, jobs, args.workers) for r in chunk]
+        extra.update({"lambdas": lambdas, "intensities": args.intensities, "scaled_fi_parameters": FI_DOSE_PARAMETERS,
+                      "mechanism_files": {k: file_record(Path(v)) for k, v in cfg["fi_mechanisms"].items()},
+                      "post_hoc": True})
+    elif args.stage == "protocol":
+        cfg.update({"conditions": (*conditions, "SIM-HONEST") if any(c.startswith("SIM-") for c in conditions)
+                    else conditions})
+        from .review import LABEL_FREE_QUANTILE, PROTOCOL_VARIANTS
+        extra.update({"variants": PROTOCOL_VARIANTS, "label_free_quantiles": LABEL_FREE_QUANTILE, "post_hoc": True})
+        runs = [r for chunk in _map(_seed_job, [(s, cfg) for s in seeds], args.workers) for r in chunk]
+    elif args.stage == "baseline":
+        runs, info = _baseline(args, cfg, seeds, params, design)
+        extra.update(info)
+    elif args.stage == "sensitivity" and args.design == "v2":
+        from .review import (
+            file_record,
+            sensitivity_v2_configs,
+            sensitivity_v2_worker,
+            write_mechanisms_v2,
+        )
+        cfg["conditions"] = ("SIM-FI", "SIM-BL")
+        cfg["worlds"] = ("fi", "bl")
+        configs, parameters, lhs = sensitivity_v2_configs(args.configs or 60, SENSITIVITY_PARAMETERS)
+        directory = Path(args.exp_root) / "sensitivity_v2_mechanisms"
+        jobs = [(-1, s, str(args.mechanisms), cfg) for s in seeds]
+        files = {}
+        for index, values in enumerate(configs):
+            path = write_mechanisms_v2(values, Path(args.mechanisms), directory / f"config_{index:03d}.json")
+            files[index] = file_record(path)
+            jobs += [(index, s, str(path), cfg) for s in seeds]
+        runs = [r for chunk in _map(sensitivity_v2_worker, jobs, args.workers) for r in chunk]
+        extra.update({"design": "v2", "lhs": lhs, "parameters": [
+            {"name": n, "low": b[0], "high": b[1], "log_uniform": b[2]} for n, b in parameters],
+            "configs": configs, "mechanism_files": files, "default_config_id": -1, "post_hoc": True})
     elif args.stage == "sensitivity":
         cfg["conditions"] = ("SIM-FI", "SIM-BL")
         cfg["worlds"] = ("fi", "bl")
-        configs = sensitivity_configs(args.configs)
+        configs = sensitivity_configs(args.configs or 40)
         directory = Path(args.exp_root) / "sensitivity_mechanisms"
         jobs = []
         files = {}
@@ -393,7 +470,7 @@ def _run_simulation_stage(args: argparse.Namespace, binary: Path) -> dict[str, A
         runs = [r for chunk in _map(_sensitivity_worker, jobs, args.workers) for r in chunk]
         extra.update({"lhs_seed": SENSITIVITY_SEED, "parameters": [
             {"name": n, "low": b[0], "high": b[1], "log_uniform": b[2]} for n, b in SENSITIVITY_PARAMETERS],
-            "configs": configs, "mechanism_files": files})
+            "configs": configs, "mechanism_files": files, "design": "v1"})
     else:
         runs = [r for chunk in _map(_seed_job, [(s, cfg) for s in seeds], args.workers) for r in chunk]
     return {"stage": args.stage, "arguments": vars(args), "seeds": seeds, "design": design,
@@ -405,6 +482,55 @@ def _run_simulation_stage(args: argparse.Namespace, binary: Path) -> dict[str, A
             "mechanisms": {"path": relative(args.mechanisms), "sha256": sha256_file(args.mechanisms)},
             "legacy_generator_sha256": sha256_file(common.LEGACY_GENERATOR),
             "provenance": provenance(), **extra, "runs": runs}
+
+
+def _baseline(args: argparse.Namespace, cfg: dict[str, Any], seeds: list[int], params: Path,
+              design: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Honest-baseline variants, each a complete main-protocol run on SIM-FI and SIM-BL."""
+    from .common import REPO
+    from .review import (
+        AUTO_SUBMIT_JITTER_MS,
+        CLOSING_QUANTILES,
+        baseline_worker,
+        file_record,
+        natural_submission_quantiles,
+        revision_multiplier,
+        write_revision_params,
+    )
+    requested = args.variants or ["revision", "per_attempt", "closing_p90", "closing_p75"]
+    root = Path(args.exp_root) / "baseline"
+    nxt = Path(args.sim_binary_next) if args.sim_binary_next else REPO / "sim" / "bin" / "examory-sim-next"
+    cfg.update({"conditions": ("SIM-FI", "SIM-BL"), "manipulation": True, "feature_diagnostics": True,
+                "breakdowns": True, "variants": {}})
+    info: dict[str, Any] = {"variants": {}, "skipped": {}, "post_hoc": True}
+    mechanisms = Path(args.mechanisms)
+    if "revision" in requested:
+        result = revision_multiplier(params, mechanisms, Path(cfg["sim_binary"]), seeds[0] if 1001 not in seeds
+                                     else 1001, design, root / "revision_search")
+        path = write_revision_params(result["multiplier"], params, root / "params_revision.json")
+        cfg["variants"]["revision"] = {"params": str(path)}
+        info["variants"]["revision"] = {**result, "params_file": file_record(path)}
+    if "per_attempt" in requested:
+        cfg["variants"]["per_attempt"] = {"item_sampling": "per-attempt"}
+        info["variants"]["per_attempt"] = {"item_sampling": "per-attempt"}
+    closing = [v for v in requested if v.startswith("closing_")]
+    if closing and not nxt.exists():
+        info["skipped"].update({v: f"{relative(nxt)} not built" for v in closing})
+    elif closing:
+        estimate = natural_submission_quantiles(nxt, params, mechanisms, 1001, design, root / "closing_search")
+        info["natural_submission"] = {**estimate, "binary": file_record(nxt)}
+        for q in CLOSING_QUANTILES:
+            name = f"closing_p{int(100 * q)}"
+            if name not in closing:
+                continue
+            close = round(estimate[f"q{int(100 * q)}_ms"])
+            flags = ["--close-after-ms", str(close), "--auto-submit-jitter-ms", str(AUTO_SUBMIT_JITTER_MS)]
+            cfg["variants"][name] = {"sim_binary": str(nxt), "sim_extra_args": flags}
+            info["variants"][name] = {"close_after_ms": close, "auto_submit_jitter_ms": AUTO_SUBMIT_JITTER_MS,
+                                      "quantile": q, "binary": file_record(nxt)}
+    jobs = [(v, s, cfg) for v in cfg["variants"] for s in seeds]
+    runs = [r for chunk in _map(baseline_worker, jobs, args.workers) for r in chunk]
+    return runs, info
 
 
 if __name__ == "__main__":

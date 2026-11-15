@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from . import posthoc
+from . import posthoc, review_analysis
 from .common import (
     BL_TYPES,
     CONDITIONS,
@@ -97,6 +97,12 @@ def fmt_ci(summary: dict[str, Any] | None, metric: str = "", digits: int | None 
     return f"{f(summary['mean'])} [{f(summary['low'])}, {f(summary['high'])}]"
 
 
+def fmt_mcse(summary: dict[str, Any] | None, metric: str = "") -> str:
+    if not summary or summary.get("mcse") is None:
+        return "NA"
+    return f"{100 * summary['mcse']:.2f}" if metric in PP_METRICS else f"{summary['mcse']:.4f}"
+
+
 def fmt_p(p: float | None) -> str:
     if p is None:
         return "NA"
@@ -176,6 +182,9 @@ def inflation(stage: dict[str, Any], detectors: tuple[str, ...]) -> dict[str, An
     for rows in families.values():
         for row, adjusted in zip(rows, holm([r["p"] for r in rows]), strict=True):
             row["p_holm"] = adjusted
+        if all("p_wilcoxon" in r for r in rows):
+            for row, adjusted in zip(rows, holm([r["p_wilcoxon"] for r in rows]), strict=True):
+                row["p_holm_wilcoxon"] = adjusted
     return dict(families)
 
 
@@ -209,6 +218,8 @@ def h1_test(stage: dict[str, Any]) -> dict[str, Any]:
                          "iforest_recall": mean_ci(forest, seed=SEED), "rules_recall": mean_ci(rules, seed=SEED)})
         for row, adjusted in zip(rows, holm([r["test"]["p"] for r in rows]), strict=True):
             row["p_holm"] = adjusted
+        for row, adjusted in zip(rows, holm([r["test"].get("p_wilcoxon") for r in rows]), strict=True):
+            row["p_holm_wilcoxon"] = adjusted
         verdicts = {r["verdict"] for r in rows}
         overall = ("H1 supported" if verdicts == {"supported"} else
                    "H1 not supported: rules adopted" if verdicts == {"rules_adopted"} else
@@ -396,7 +407,7 @@ def ednet_summary(stage: dict[str, Any]) -> dict[str, Any]:
     for source in sources:
         for detector in detectors:
             for rate in ("0.05", "0.01"):
-                values, widths = [], []
+                values, widths, ci_seeds = [], [], []
                 for run in runs:
                     block = run["P2_refit"] if source == "P2_refit" else run["P1_transfer"].get(source[3:], {})
                     cell = block.get(detector, {}).get(rate)
@@ -404,9 +415,11 @@ def ednet_summary(stage: dict[str, Any]) -> dict[str, Any]:
                         values.append(cell["flag_rate"])
                         if cell["cohort_ci"]:
                             widths.append((cell["cohort_ci"]["low"], cell["cohort_ci"]["high"]))
+                            ci_seeds.append(run["seed"])
                 out["flag_rates"][f"{source}|{detector}|{rate}"] = {
                     **mean_ci(values, seed=SEED),
-                    "first_seed_cohort_ci": list(widths[0]) if widths else None}
+                    "first_seed_cohort_ci": list(widths[0]) if widths else None,
+                    "first_seed": ci_seeds[0] if ci_seeds else None}
             strata: dict[str, Any] = {}
             for run in runs:
                 block = run["P2_refit"] if source == "P2_refit" else run["P1_transfer"].get(source[3:], {})
@@ -421,12 +434,16 @@ def ednet_summary(stage: dict[str, Any]) -> dict[str, Any]:
     for source in order:
         aucs = [r["realism"][source]["auc"] for r in runs if source in r["realism"]]
         secondary = [r["realism_all_base"][source]["auc"] for r in runs if source in r.get("realism_all_base", {})]
-        first = next(r for r in runs if source in r["realism"])["realism"][source]
+        first_run = next(r for r in runs if source in r["realism"])
+        first = first_run["realism"][source]
+        first_all_base = (first_run.get("realism_all_base") or {}).get(source, {})
         features = first["distances"]
         out["realism"][source] = {
             "c2st_auc": mean_ci(aucs, seed=SEED), "c2st_features": first["features"],
             "c2st_auc_all_base": mean_ci(secondary, seed=SEED),
             "first_seed_user_bootstrap_ci": first["auc_user_bootstrap_ci"],
+            "first_seed_user_bootstrap_ci_all_base": first_all_base.get("auc_user_bootstrap_ci"),
+            "first_seed": first_run["seed"],
             "n_real": first["n_real"], "n_synthetic": first["n_synthetic"],
             "distances": {f: {"ks": mean_ci([r["realism"][source]["distances"][f]["ks"] for r in runs
                                              if source in r["realism"]], seed=SEED),
@@ -465,11 +482,12 @@ def md_main(cells: dict[str, Any], detectors: tuple[str, ...], title: str, note:
                     text = fmt_ci(cell.get(metric), metric)
                     if cell.get("degenerate_seeds"):
                         text += f" † {cell['degenerate_seeds']}/{cell['n_seeds']}"
-                    row.append(text)
+                    row += [text, fmt_mcse(cell.get(metric), metric)]
                 rows.append(row)
-        parts += [f"## {label}", "", table(["Detector", "Subset"] + conditions, rows,
-                                           "|---|---|" + "---:|" * len(conditions)), ""]
-    parts.append("Cells: mean over seeds [95 % percentile-bootstrap CI over seeds]. Slot rows compare that "
+        header = ["Detector", "Subset"] + [h for c in conditions for h in (c, f"MCSE {c}")]
+        parts += [f"## {label}", "", table(header, rows, "|---|---|" + "---:|" * (2 * len(conditions))), ""]
+    parts.append("Cells: mean over seeds [95 % percentile-bootstrap CI over seeds]; MCSE = Monte Carlo standard "
+                 "error of the mean, SD of the per-seed values / √n (same units). Slot rows compare that "
                  "slot's cheaters with all normal test attempts (LEGACY/SIM-FI type ↔ SIM-BL mechanism).")
     rows = []
     for detector in detectors:
@@ -484,18 +502,23 @@ def md_main(cells: dict[str, Any], detectors: tuple[str, ...], title: str, note:
 
 
 def md_inflation(families: dict[str, Any]) -> str:
+    sizes = sorted({len(rows) for rows in families.values()})
+    size = " or ".join(str(n) for n in sizes)
     parts = ["# Inflation of detector performance by feature-aligned injection", "",
              ("Δ = metric(injection world) − metric(SIM-BL). Recall in percentage points; pAUC in "
-             "standardized-pAUC units. SIM-FI − SIM-BL is paired by seed (paired bootstrap CI, two-sided "
-             "Wilcoxon signed-rank). LEGACY − SIM-BL is unpaired (independent bootstrap CI, two-sided "
-             "Mann–Whitney U). Holm correction within each family of 12 slot × detector tests."), ""]
+             "standardized-pAUC units. SIM-FI − SIM-BL is paired by seed (paired bootstrap CI, exact two-sided "
+             "sign-flip permutation test on the per-seed differences, all 2^n sign patterns). LEGACY − SIM-BL is "
+             "unpaired (independent bootstrap CI, two-sided Mann–Whitney U). MCSE = Monte Carlo standard error of "
+             "Δ (paired: SD of the per-seed differences / √n; unpaired: √(s²_x/n_x + s²_y/n_y)). Holm correction "
+             f"within each family (one family per comparison × metric) of {size} slot × detector tests "
+             "(number of detectors × 4 slots); the family size is printed with each block."), ""]
     for name, rows in families.items():
         comparison, metric = name.split("|")
-        body = [[r["detector"], f"{r['slot']} {SLOT_LABEL[r['slot']]}", fmt_ci(r, metric),
+        body = [[r["detector"], f"{r['slot']} {SLOT_LABEL[r['slot']]}", fmt_ci(r, metric), fmt_mcse(r, metric),
                  str(r.get("n", r.get("n_x"))), fmt_p(r["p"]), fmt_p(r["p_holm"])] for r in rows]
-        parts += [f"## {comparison}, {metric}", "",
-                  table(["Detector", "Slot", "Δ mean [95 % CI]", "n", "p", "p (Holm)"], body,
-                        "|---|---|---:|---:|---:|---:|"), ""]
+        parts += [f"## {comparison}, {metric} (Holm family of {len(rows)})", "",
+                  table(["Detector", "Slot", "Δ mean [95 % CI]", "MCSE", "n", "p", "p (Holm)"], body,
+                        "|---|---|---:|---:|---:|---:|---:|"), ""]
     return "\n".join(parts)
 
 
@@ -514,7 +537,7 @@ def md_h1(h1: dict[str, Any]) -> str:
                          fmt_ci(r["rules_recall"], "recall@5"), fmt_ci(r["test"], "recall@5"), fmt_p(r["test"]["p"]),
                          fmt_p(r["p_holm"]), r["verdict"], fmt_ci(r["iforest_no_peers_minus_rules"], "recall@5")])
         rows.append([condition, "**overall**", "", "", "", "", "", h1[condition]["outcome"], ""])
-    parts.append(table(["Condition", "Slot", "iforest recall %", "rules recall %", "gain pp [CI]", "p (Wilcoxon)",
+    parts.append(table(["Condition", "Slot", "iforest recall %", "rules recall %", "gain pp [CI]", "p (sign-flip)",
                         "p (Holm, 2 slots)", "verdict", "iforest_no_peers − rules pp"], rows,
                        "|---|---|---:|---:|---:|---:|---:|---|---:|"))
     return "\n".join(parts) + "\n"
@@ -598,14 +621,22 @@ def md_ednet(summary: dict[str, Any]) -> str:
              f"subsample: {summary['ednet']['subsample']}. Simulator params: `{summary['params']['path']}` "
              f"({summary['params']['source']})."), "", "## Flag rate on EdNet test cohorts (%)", ""]
     rows = []
+    first_seeds = {v.get("first_seed") for v in summary["flag_rates"].values() if v.get("first_seed") is not None}
+    first_seed = first_seeds.pop() if len(first_seeds) == 1 else "first"
     for key, value in summary["flag_rates"].items():
         source, detector, rate = key.split("|")
         ci = value.get("first_seed_cohort_ci")
         rows.append([source, detector, f"{100 * float(rate):.0f} %", fmt_ci(value, "fpr@5"),
                      "NA" if not ci else f"[{100 * ci[0]:.1f}, {100 * ci[1]:.1f}]",
                      "peer features" if detector in ("iforest", "quantile_rules") else ""])
-    parts += [table(["Fitted on", "Detector", "nominal FPR", "flag rate, mean over seeds [CI]",
-                     "cohort-bootstrap CI (first seed)", "flag"], rows, "|---|---|---:|---:|---:|---|"), ""]
+    n_seeds = max((v.get("n") or 0) for v in summary["flag_rates"].values()) if summary["flag_rates"] else 0
+    parts += [(f"Two different intervals: the across-seed interval is the 95 % percentile bootstrap of the mean "
+               f"flag rate over the {n_seeds} seeds (between-replicate variation); the cohort-bootstrap interval "
+               f"is the within-run 95 % interval (500 resamples of EdNet test cohorts) of seed {first_seed} only "
+               "(sampling variation of one deployment)."), "",
+              table(["Fitted on", "Detector", "nominal FPR", "flag rate: mean over seeds [across-seed 95 % CI]",
+                     f"flag rate: cohort-bootstrap 95 % CI (seed {first_seed})", "flag"], rows,
+                    "|---|---|---:|---:|---:|---|"), ""]
     parts += ["## Who is flagged (5 % threshold): flag rate (%) by stratum", "",
               ("Strata use EdNet's own-reference features for every row (so P1 and P2 strata are the same "
                "attempts). Quartiles of score, median answer time and fast-answer fraction use cut points from "
@@ -626,12 +657,18 @@ def md_ednet(summary: dict[str, Any]) -> str:
                f"Primary: behavioural features only ({', '.join(first.get('c2st_features', []))}); secondary: all "
                "BASE_FEATURES incl. history_missing and z_score, which reflect the attempts-per-user design. "
                "SIM sources are the honest world with --item-sampling per-attempt."), ""]
-    rows = [["C2ST AUC, behavioural features (primary)"] + [fmt_ci(summary["realism"][s]["c2st_auc"]) for s in sources],
-            ["C2ST AUC, all base features (secondary)"]
+    def user_ci(source: str, key: str) -> str:
+        ci = summary["realism"][source].get(key)
+        return "NA" if not ci else f"[{ci['low']:.3f}, {ci['high']:.3f}]"
+    seed_label = summary["realism"][sources[0]].get("first_seed", "first") if sources else "first"
+    rows = [["C2ST AUC, behavioural features (primary): mean over seeds [across-seed 95 % CI]"]
+            + [fmt_ci(summary["realism"][s]["c2st_auc"]) for s in sources],
+            [f"C2ST AUC, behavioural features (primary): user-bootstrap 95 % CI (seed {seed_label})"]
+            + [user_ci(s, "first_seed_user_bootstrap_ci") for s in sources],
+            ["C2ST AUC, all base features (secondary): mean over seeds [across-seed 95 % CI]"]
             + [fmt_ci(summary["realism"][s]["c2st_auc_all_base"]) for s in sources],
-            ["user-bootstrap CI, primary (first seed)"]
-            + [(f"[{summary['realism'][s]['first_seed_user_bootstrap_ci']['low']:.3f}, "
-                f"{summary['realism'][s]['first_seed_user_bootstrap_ci']['high']:.3f}]") for s in sources],
+            [f"C2ST AUC, all base features (secondary): user-bootstrap 95 % CI (seed {seed_label})"]
+            + [user_ci(s, "first_seed_user_bootstrap_ci_all_base") for s in sources],
             ["n real / synthetic (per seed)"]
             + [f"{summary['realism'][s]['n_real']}/{summary['realism'][s]['n_synthetic']}" for s in sources]]
     parts += [table([""] + sources, rows, "|---|" + "---:|" * len(sources)), ""]
@@ -962,7 +999,13 @@ def analyze(stages_dir: Path, out_dir: Path, figures: bool = True) -> dict[str, 
         if figures:
             summary["figures"] += figure_dose(rows, figures_dir)
     sensitivity = load("sensitivity")
-    if sensitivity:
+    if sensitivity and sensitivity.get("design") == "v2":  # replaces v1 (stages/sensitivity_v1.json)
+        result = review_analysis.sensitivity_v2_summary(sensitivity)
+        summary["sensitivity"] = result
+        write("sensitivity", review_analysis.md_sensitivity_v2(result))
+        if figures:
+            summary["figures"] += review_analysis.figure_sensitivity_v2(result, figures_dir)
+    elif sensitivity:
         result = sensitivity_summary(sensitivity)
         summary["sensitivity"] = result
         write("sensitivity", md_sensitivity(result))
@@ -993,6 +1036,37 @@ def analyze(stages_dir: Path, out_dir: Path, figures: bool = True) -> dict[str, 
         result = posthoc.similarity_summary(similarity, main, series)
         summary["similarity"] = result
         write("similarity", posthoc.md_similarity(result, fmt_ci, table))
+    # Stages and tables added after independent review of the draft (README amendment of 15 Nov 2026).
+    fi_dose = load("fi_dose")
+    if fi_dose:
+        result = review_analysis.fi_dose_summary(fi_dose, main, dose)
+        summary["fi_dose"] = result
+        write("fi_dose", review_analysis.md_fi_dose(result))
+        if figures:
+            summary["figures"] += review_analysis.figure_fi_dose(result, figures_dir)
+    protocol = load("protocol")
+    if protocol:
+        result = review_analysis.protocol_summary(protocol, main)
+        summary["protocol"] = result
+        write("protocol", review_analysis.md_protocol(result))
+    if main:
+        result = review_analysis.subpopulation_summary(main, protocol)
+        summary["subpopulations"] = result
+        write("subpopulations", review_analysis.md_subpopulations(result))
+    baseline = load("baseline")
+    if baseline:
+        result = review_analysis.baseline_summary(baseline, main)
+        summary["baseline"] = result
+        write("baseline", review_analysis.md_baseline(
+            result, (summary.get("protocol") or {}).get("feature_diagnostics")))
+    if main and prevalence:
+        result = review_analysis.prevalence_diagnostic(main, prevalence)
+        summary["prevalence_diagnostic"] = result
+        write("prevalence_diagnostic", review_analysis.md_prevalence_diagnostic(result))
+    crossed = review_analysis.crossed_p_values(summary)
+    summary["pvalue_changes"] = crossed
+    write("pvalue_changes", review_analysis.md_crossed(
+        crossed, ["inflation", "h1", "copy_peer_sync", "robust_detectors", "supervised"]))
     write_json(out_dir / "summary.json", summary, compact=True, digits=4)
     return summary
 

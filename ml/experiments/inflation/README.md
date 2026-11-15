@@ -1,6 +1,6 @@
 # Feature-injection inflation experiment
 
-Harness and statistical analysis for *"Feature injection inflates the performance of
+Harness and statistical analysis for *"Feature injection can inflate the performance of
 quiz-cheating detectors: evidence from behaviour-level simulation"*.
 
 The detector pipeline `ml/anomaly/{features,split,train,evaluate}.py` is **frozen**: this
@@ -25,6 +25,8 @@ and mechanism file, the simulator binary and source tree, library versions and w
 | `supervised.py` | post hoc stage `supervised`: supervised classifiers on the frozen feature table |
 | `similarity.py` | post hoc stage `similarity`: answer-similarity detector AnswerSim |
 | `posthoc.py` | aggregation, tables and figure F7 of the two post hoc stages |
+| `review.py` | stages added after independent review: `fi-dose`, `protocol`, `baseline`, sensitivity v2 helpers |
+| `review_analysis.py` | their aggregation, tables, figures F5 (v2) and F8, sub-populations, prevalence diagnostic, p-value changes |
 | `compact.py` | compact committed stage format and its inverse |
 | `results_defaults/` | appendix: uncalibrated-defaults run of 14 Nov 2026 |
 | `results/` | committed outputs: `stages/*.json`, `summary.json`, `tables/*.md`, `figures/*.{png,pdf}` |
@@ -53,7 +55,17 @@ $PY -m ml.experiments.inflation.analyze                # summary.json, tables, f
 # post hoc, exploratory (amendment of 15 Nov 2026); rerun analyze afterwards
 $PY -m ml.experiments.inflation.run supervised         # 20 seeds × 6 train→test cells
 $PY -m ml.experiments.inflation.run similarity         # 20 seeds × {LEGACY, SIM-FI, SIM-BL, SIM-HONEST}
+
+# after independent review (amendment of 15 Nov 2026); rerun analyze afterwards
+$PY -m ml.experiments.inflation.run fi-dose            # 10 seeds × (4 λ + 5 intensities)
+$PY -m ml.experiments.inflation.run protocol           # 20 seeds × 3 conditions × 3 protocol variants
+$PY -m ml.experiments.inflation.run sensitivity        # v2: (60 configurations + default) × 10 seeds
+$PY -m ml.experiments.inflation.run baseline           # 20 seeds × 4 honest-baseline variants
+                                                       # (closing_* use --sim-binary-next, default sim/bin/examory-sim-next)
 ```
+
+`--sim-binary` (default `sim/bin/examory-sim`) selects the simulator for every stage; `--sim-binary-next`
+is used only by the `baseline` closing-time variants (simulator ≥ 0.3.0).
 
 Simulator parameters: `ml/ednet/calibration.json` when it exists, else
 `sim/params/default.json`; the choice is recorded as `params.source` in each stage JSON
@@ -107,7 +119,9 @@ lookup by `mech_flag` (naive/disguising; verify/lookup_then_answer).
 
 **Primary endpoint.** Inflation Δ = recall@5 %(SIM-FI) − recall@5 %(SIM-BL) per slot × detector,
 paired by seed; mean over seeds with paired percentile bootstrap 95 % CI (10 000 resamples)
-and two-sided Wilcoxon signed-rank test; Holm correction across the 12 slot × detector tests.
+and two-sided paired test (Wilcoxon signed-rank until 15 Nov 2026; since then the exact sign-flip
+permutation test, see the amendment of 15 Nov 2026 "after independent review"); Holm correction
+across the 12 slot × detector tests.
 
 **Secondary endpoints.** (i) LEGACY − SIM-BL recall (unpaired: independent bootstrap CI,
 Mann–Whitney U, Holm over 12). (ii) The same two comparisons for standardized pAUC (each its
@@ -119,7 +133,7 @@ descriptive/exploratory; Spearman correlations in the sensitivity analysis are u
 
 **H1 (verification plan §0), tested on SIM-BL.** Gain = recall@5 %(iforest) −
 recall@5 %(quantile_rules) on S3 (copy_peer) and S4 (proxy), paired by seed (bootstrap CI,
-Wilcoxon, Holm over the 2 slots). Decision on the across-seed mean gain per slot: ≥ 15 pp
+paired test as for the primary endpoint, Holm over the 2 slots). Decision on the across-seed mean gain per slot: ≥ 15 pp
 supported; < 5 pp rules adopted; otherwise inconclusive. H1 supported only if both slots are
 supported; "rules adopted" if both gains are < 5 pp; anything else is mixed/inconclusive.
 The outcome is reported whatever it is; the same computation is shown for LEGACY and SIM-FI.
@@ -171,6 +185,39 @@ changed (LEGACY → SIM-BL left out of figure F7 because its realized FPR is not
 stage, metric, test, decision rule, stage file, table or figure was changed; `summary.json` only gained the
 keys `supervised` and `similarity` (and its provenance fields were refreshed).
 
+Amendment of 15 Nov 2026, **after independent review of the draft** (coordinator request; all items are
+post hoc and exploratory unless they only change how existing results are tested or printed):
+- A. Stage `fi-dose`: injection magnitude λ ∈ {0.25, 0.5, 0.75, 1} multiplying `fi.rapid_item_prob`,
+  `fi.changes_prob_low/high`, `fi.collusion_copy_prob`, `fi.score_jump_low/high` (generated mechanisms
+  file, no simulator change), crossed with the dose stage's behaviour-level intensity grid, seeds
+  1001–1010. Finding recorded first: `--intensity` acts only on the bl world (`world.go: s.intensity` is
+  used in `buildBL` only); the dose stage's SIM-FI CSVs are byte-identical across intensities.
+- B. Sub-population recall from the main stage (pre-knowledge naive vs disguising, copy_peer sync vs
+  non-sync) and the count of cheating with no observable change (`tables/subpopulations.md`).
+- C. Stage `protocol`: label-free threshold, contaminated fitting, final-attempt evaluation.
+- D. Sensitivity analysis v2 replaces v1 in `tables/sensitivity.md` and figure F5; v1's stage file is kept
+  as `stages/sensitivity_v1.json` (its table/figure are no longer generated). This changes the numbers
+  of that table and figure by design (new design), not by a change of method for the same design.
+- E. Stage `baseline`: exam-like revision rate, per-attempt item sampling, fixed closing time
+  (simulator 0.3.0, `--sim-binary-next`).
+- F. Response-time person-fit l_t added to the classical-baselines stage `similarity`
+  (AnswerSim numbers unchanged).
+- G. (1) Every paired p-value is now the exact two-sided sign-flip permutation test on the per-seed
+  differences (all 2^n sign patterns, n ≤ 20), replacing Wilcoxon (SciPy chose exact or asymptotic
+  variants, giving p = 0.0008 for a 68-pp effect and p < 0.0001 for a 26-pp effect); Holm is kept for the
+  primary family of 12. **This changes p-values (and Holm p-values) in the committed tables
+  `inflation.md`, `robust_inflation.md`, `h1.md` and `supervised.md`** (and the `copy_peer_sync` test stored in
+  `summary.json`);
+  `tables/pvalue_changes.md` lists every cell that crossed 0.05. Estimates and CIs are unchanged.
+  (2) Monte Carlo standard error columns (SD of per-seed values / √n) in `main.md`, `inflation.md`
+  (and `robust_detectors.md`, `robust_inflation.md`, which use the same printers). (3) `robust_inflation.md`
+  said "family of 12" while Holm was applied over the 24 tests (6 detectors × 4 slots) of each family;
+  header and computation now agree (24 there, 12 in `inflation.md`, printed per block). (4) `ednet.md`
+  labels the across-seed interval and the within-run cohort/user-bootstrap interval for flag rates and
+  both C2ST feature sets. (5) Title "inflates" → "can inflate"; the limitation on the C2ST features is
+  corrected to match amendment 4.
+- H. Diagnostic of Rules recall on copy_peer at low prevalence (`tables/prevalence_diagnostic.md`).
+
 **Transfer.** Fit (reference + model + threshold) on condition X, apply to test cohorts of Y
 for (LEGACY→SIM-BL), (SIM-FI→SIM-BL), (SIM-BL→SIM-FI), (LEGACY→SIM-FI) and the diagonals;
 report realized FPR and recall ("what a team that validated on X would see on Y").
@@ -215,7 +262,7 @@ against the CSV label; LEGACY: the CSV label), all train-cohort attempts. Thresh
 test cohorts (recall per type, realized FPR, ROC-AUC, standardized pAUC, sync/non-sync copy_peer split).
 Cells: SIM-FI→SIM-FI, SIM-FI→SIM-BL, SIM-BL→SIM-FI, SIM-BL→SIM-BL, LEGACY→SIM-FI, LEGACY→SIM-BL (LEGACY
 uses the same code path; its realized FPR on SIM targets is far above 5 %, as in the transfer stage, so
-its recall is not at a 5 % operating point). Contrasts, paired by seed (bootstrap CI, Wilcoxon,
+its recall is not at a 5 % operating point). Contrasts, paired by seed (bootstrap CI, sign-flip test,
 unadjusted), overall and per slot, for every model (primary: `hgb` with 15 features): (1) recall(FI→FI) −
 recall(FI→BL); (2) recall(BL→BL) − recall(FI→BL); (3) recall(BL→BL) − recall of the best unsupervised
 detector of the main stage on SIM-BL (the one of Rules / IF / IF + peers with the highest mean recall on
@@ -238,6 +285,57 @@ attempts share the same 20 items (|S| = 20, 57 eligible partners per attempt). T
 monotone function of the match count and takes few distinct values, so the realized operating point lies
 below 5 % FPR. Outputs: `tables/similarity.md`, `summary.json → similarity`.
 
+**Fi-dose (after review).** For each λ the harness writes `fi_dose_mechanisms/lambda_<λ>.json` (λ × the six
+listed fi parameters, capped at 1) and generates worlds honest+fi with it; λ = 1 writes a file identical in
+content to `sim/params/mechanisms.json` and reproduces the main stage's SIM-FI CSV (hash-checked). SIM-BL
+at the dose stage's intensities is regenerated (worlds honest+bl, identical bl CSVs to the dose stage,
+checked). Output per detector × slot: recall_FI(λ), recall_BL(x) and the 4 × 5 grid Δ = recall_FI(λ) −
+recall_BL(x), paired by seed (bootstrap CI; no tests); figure F8 (heat-map per slot × detector with the
+Δ = 0 contour). Common dose scale per grid point: mean score gain of cheaters vs their honest
+counterfactual (manipulation check) and mean `truth.csv:items_affected`. Collusion keeps its 6
+forced-wrong items and the 1-s submit window at every λ, so λ does not dose that recipe's
+synchrony signal. `--intensity x` replaces the per-mechanism defaults (0.65 / 0.70 / 0.80, proxy scale 1), so
+x = 1 is a stronger bl dose than the main stage; the table and F8 therefore add the main stage's SIM-BL
+(no `--intensity`, same seeds) as column `x = default`, and the main contrast is (λ = 1, x = default).
+
+**Protocol (after review).** Main configuration, 20 seeds, LEGACY / SIM-FI / SIM-BL. Per seed and condition
+the standard fit (reproduces `main.json`, checked) is evaluated with (a) the main threshold rule, (b) a
+label-free threshold `numpy.quantile(validation normal scores, 0.95)` (linear interpolation; 0.99 for the
+1 % point), and (c) a contaminated fit: a copy of the CSV in which train-cohort cheaters carry
+`is_anomaly = 0`, `anomaly_type = none`, so the frozen `train.train` fits references and models on all
+train-cohort attempts; features of the original data are rebuilt with that reference; validation/test labels
+are untouched and the main threshold rule applies. Each variant also reports FPR and precision against final
+normal attempts only (`final_only:*`). The standard run also records feature diagnostics and, for SIM-FI /
+SIM-BL, which cheater attempts are event-identical to the honest counterfactual.
+
+**Sensitivity v2 (after review).** 60 configurations × seeds 1001–1010 over the 10 v1 behaviour parameters
+plus `fi.rapid_item_prob` U(0.30, 0.90), a common multiplier on `fi.changes_prob_low/high` U(0.5, 1.25)
+(probabilities capped at 1), `fi.collusion_submit_window_ms` log-uniform(500, 20000) (rounded to ms) and a
+common multiplier on `fi.score_jump_low/high` U(0.5, 1.5). Latin hypercube (RNG seed 20261115) decorrelated
+by within-column swaps until the maximum absolute Spearman correlation between columns is ≤ 0.10 (the achieved
+value is recorded in the stage JSON and the table). The default configuration runs on the same seeds
+(`config_id = -1`). Reported: SIM-FI and SIM-BL recall and Δ per configuration, the v1 distribution
+summaries, the default configuration's Δ with CI, and partial rank correlation coefficients (all 14
+parameters jointly; number of tests stated in the table).
+
+**Baseline (after review).** Each variant is a full main-protocol run (20 seeds, SIM-FI and SIM-BL, with the
+manipulation check and feature diagnostics). (a) `revision`: both `revision.change_mult_*` of the calibrated
+parameters multiplied by m (≡ scaling the honest revision propensity r_i while r_i·mult < 0.95); m found by
+bisection on log m so that the honest world of seed 1001 has 0.84 ± 0.005 answer changes per 20-item attempt. (The calibrated parameters give 4.66 changes per 20-item attempt on that world, not ≈ 6.7.)
+(b) `per_attempt`: `--item-sampling per-attempt`. (c) `closing_p90` / `closing_p75`: simulator 0.3.0
+`--close-after-ms` at the 90th / 75th percentile of the honest natural submission time after the sitting
+opens (seed 1001, no window; 1 792 521 and 1 600 450 ms) and `--auto-submit-jitter-ms 2000`; the copy_peer
+breakdown then also splits by `truth.csv:auto_submitted`.
+
+**RT person-fit (after review; in `similarity`).** ln t_ik = β_k − τ_i + ε_ik fitted on all train-cohort
+attempts by alternating means (no labels; τ = 0 start; stop when the largest change < 1e-12); σ_k = SD
+(ddof 0) of item k's residuals; for any attempt τ_i = mean_k(β_k − ln t_ik) over its items, z_ik =
+(ln t_ik − (β_k − τ_i)) / σ_k, score l_t = Σ_k z_ik² (Marianti et al., 2014). t_ik is the first-answer
+latency `time_since_shown_ms` of the item's first `quiz.answered` event: the time from the item being shown
+to the first selection. Later answer changes, including follow-up changes made after the student moved on
+to other items (copier follow-ups), do not enter t_ik; the end of an item visit is not observable in the
+event stream.
+
 ## Leakage and integrity guards
 
 * `train.train` fits references/models on normal training cohorts; the harness re-checks the count.
@@ -255,8 +353,9 @@ below 5 % FPR. Outputs: `tables/similarity.md`, `summary.json → similarity`.
 * The 20 seeds share code and parameter files; seed variation does not cover model uncertainty.
 * EdNet attempts are pseudo-attempts (20 consecutive Part-5 responses), not exams; the
   no-cheating assumption cannot be checked, and peer features have no meaning there.
-* The C2ST uses `history_missing`/`z_score`, which partly reflect the attempts-per-user design
-  rather than behaviour.
+* The primary C2ST excludes `history_missing`/`z_score` (amendment 4); only the secondary
+  all-BASE_FEATURES C2ST uses them, and it partly reflects the attempts-per-user design rather than
+  behaviour.
 * The simulator (`sim/`) was not yet committed when the stages ran; it is now tracked in git
   (commit 31485bd), and every stage records its source tree hash and binary hash.
 * Each stage JSON records the SHA-256 of the harness files at the time the stage ran

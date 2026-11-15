@@ -8,7 +8,9 @@ EdNet input: `ml/datasets/raw/ednet/derived/ednet_eval.csv` (SHA-256 `0c30a770eb
 
 ## Flag rate on EdNet test cohorts (%)
 
-| Fitted on | Detector | nominal FPR | flag rate, mean over seeds [CI] | cohort-bootstrap CI (first seed) | flag |
+Two different intervals: the across-seed interval is the 95 % percentile bootstrap of the mean flag rate over the 10 seeds (between-replicate variation); the cohort-bootstrap interval is the within-run 95 % interval (500 resamples of EdNet test cohorts) of seed 1001 only (sampling variation of one deployment).
+
+| Fitted on | Detector | nominal FPR | flag rate: mean over seeds [across-seed 95 % CI] | flag rate: cohort-bootstrap 95 % CI (seed 1001) | flag |
 |---|---|---:|---:|---:|---|
 | P2_refit | iforest | 5 % | 5.0 [4.7, 5.3] | [4.1, 5.7] | peer features |
 | P2_refit | iforest | 1 % | 1.0 [0.8, 1.1] | [0.9, 1.8] | peer features |
@@ -64,9 +66,10 @@ AUC 0.5 = indistinguishable. HistGradientBoosting, 5-fold StratifiedGroupKFold b
 
 |  | LEGACY | SIM-defaults | SIM-calibrated |
 |---|---:|---:|---:|
-| C2ST AUC, behavioural features (primary) | 0.999 [0.999, 0.999] | 1.000 [1.000, 1.000] | 0.830 [0.828, 0.831] |
-| C2ST AUC, all base features (secondary) | 0.999 [0.999, 0.999] | 1.000 [1.000, 1.000] | 0.947 [0.946, 0.948] |
-| user-bootstrap CI, primary (first seed) | [0.998, 1.000] | [1.000, 1.000] | [0.822, 0.843] |
+| C2ST AUC, behavioural features (primary): mean over seeds [across-seed 95 % CI] | 0.999 [0.999, 0.999] | 1.000 [1.000, 1.000] | 0.830 [0.828, 0.831] |
+| C2ST AUC, behavioural features (primary): user-bootstrap 95 % CI (seed 1001) | [0.998, 1.000] | [1.000, 1.000] | [0.822, 0.843] |
+| C2ST AUC, all base features (secondary): mean over seeds [across-seed 95 % CI] | 0.999 [0.999, 0.999] | 1.000 [1.000, 1.000] | 0.947 [0.946, 0.948] |
+| C2ST AUC, all base features (secondary): user-bootstrap 95 % CI (seed 1001) | [0.998, 1.000] | [1.000, 1.000] | [0.944, 0.953] |
 | n real / synthetic (per seed) | 3156/3155 | 3600/3600 | 3600/3600 |
 
 ## Per-feature distance to EdNet: KS statistic (mean over seeds [CI])

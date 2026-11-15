@@ -40,6 +40,8 @@ from .pipeline import (
 MIN_SHARED_ITEMS = 10
 NO_PARTNER_SCORE = -1e9
 DETECTORS = ("answersim", "answersim_incorrect")
+PERSONFIT = "rt_personfit"
+PERSONFIT_MAX_ITERATIONS, PERSONFIT_TOLERANCE = 10_000, 1e-12
 
 
 def option_frequencies(attempts: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
@@ -144,6 +146,67 @@ def answer_similarity(attempts: list[dict[str, Any]], null_p: dict[str, float],
     return {"scores": scores, "max_shared_items": shared_sizes, "eligible_partners": partners}
 
 
+def _log_times(attempt: dict[str, Any]) -> dict[str, float]:
+    """ln t_ik with t_ik = time_since_shown_ms of the item's FIRST quiz.answered event (first-answer
+    latency, ``first_times`` of the frozen reader). Later change events, including follow-ups after
+    the student has moved on to other items (revisits), are not part of t_ik."""
+    return {item_key(attempt, q): float(np.log(t)) for q, t in attempt["first_times"].items()}
+
+
+def fit_response_time_model(attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    """ln t_ik = β_k − τ_i + ε_ik by alternating means on ``attempts`` (no labels).
+
+    β_k = mean_i(ln t_ik + τ_i), τ_i = mean_k(β_k − ln t_ik), from τ = 0 until the largest change is
+    below 1e-12 (the location of β and τ is not identified and does not affect residuals);
+    σ_k = SD (ddof 0) of item k's residuals.
+    """
+    items = sorted({k for a in attempts for k in _log_times(a)})
+    column = {k: c for c, k in enumerate(items)}
+    rows, cols, values = [], [], []
+    for r, attempt in enumerate(attempts):
+        for k, value in _log_times(attempt).items():
+            rows.append(r)
+            cols.append(column[k])
+            values.append(value)
+    rows, cols, values = np.asarray(rows), np.asarray(cols), np.asarray(values)
+    n_rows, n_items = len(attempts), len(items)
+    row_n = np.bincount(rows, minlength=n_rows)
+    col_n = np.bincount(cols, minlength=n_items)
+    tau = np.zeros(n_rows)
+    beta = np.zeros(n_items)
+    for iteration in range(1, PERSONFIT_MAX_ITERATIONS + 1):
+        new_beta = np.bincount(cols, values + tau[rows], minlength=n_items) / col_n
+        new_tau = np.bincount(rows, new_beta[cols] - values, minlength=n_rows) / row_n
+        change = max(float(np.max(np.abs(new_beta - beta))), float(np.max(np.abs(new_tau - tau))))
+        beta, tau = new_beta, new_tau
+        if change < PERSONFIT_TOLERANCE:
+            break
+    residual = values - (beta[cols] - tau[rows])
+    sigma = np.sqrt(np.bincount(cols, residual ** 2, minlength=n_items) / col_n)
+    return {"beta": dict(zip(items, beta.tolist(), strict=True)),
+            "sigma": dict(zip(items, sigma.tolist(), strict=True)), "iterations": iteration}
+
+
+def response_time_person_fit(attempts: list[dict[str, Any]], model: dict[str, Any]) -> tuple[np.ndarray, float]:
+    """l_t = Σ_k z_ik², z_ik = (ln t_ik − (β_k − τ_i)) / σ_k, τ_i = mean_k(β_k − ln t_ik) over the
+    attempt's items known to the model (Marianti et al., 2014). Items unseen in training or with
+    σ_k = 0 are skipped; an attempt without such items gets NO_PARTNER_SCORE."""
+    scores = np.full(len(attempts), NO_PARTNER_SCORE)
+    used = total = 0
+    for i, attempt in enumerate(attempts):
+        logs = _log_times(attempt)
+        total += len(logs)
+        known = [(model["beta"][k], model["sigma"][k], v) for k, v in logs.items()
+                 if k in model["beta"] and model["sigma"][k] > 0]
+        if not known:
+            continue
+        used += len(known)
+        beta, sigma, value = (np.asarray(x) for x in zip(*known, strict=True))
+        tau = float(np.mean(beta - value))
+        scores[i] = float(np.sum(((value - (beta - tau)) / sigma) ** 2))
+    return scores, used / total if total else 0.0
+
+
 def eligibility_summary(result: dict[str, Any], split: np.ndarray) -> dict[str, Any]:
     test = split == SPLIT_CODES["test"]
     sizes, partners = result["max_shared_items"], result["eligible_partners"]
@@ -155,6 +218,8 @@ def eligibility_summary(result: dict[str, Any], split: np.ndarray) -> dict[str, 
            "share_with_eligible_partner": float(np.mean(partners > 0)),
            "share_with_eligible_partner_test": float(np.mean(partners[test] > 0)) if test.any() else None}
     for name, values in result["scores"].items():
+        if name not in DETECTORS:
+            continue
         out[f"share_no_partner_score:{name}"] = float(np.mean(values == NO_PARTNER_SCORE))
     return out
 
@@ -205,6 +270,10 @@ def score_dataset(dataset: Dataset, manifest: dict[str, Any]) -> tuple[Any, dict
     except IntegrityError as error:
         keys, key_check = None, {"verified": False, "error": str(error)}
     result = answer_similarity(dataset.attempts, null_p, keys)
+    model = fit_response_time_model(train_attempts)
+    result["scores"][PERSONFIT], coverage = response_time_person_fit(dataset.attempts, model)
+    key_check = {**key_check, "rt_personfit": {"iterations": model["iterations"], "items": len(model["beta"]),
+                                               "share_responses_scored": coverage}}
     return frame, result, key_check
 
 
@@ -224,5 +293,6 @@ def _similarity_run(seed: int, condition: str, dataset: Dataset, manifest: dict[
     table, scores, _ = load_scores(cache)
     return {"seed": seed, "condition": condition, "data": data_record(dataset), "split_counts": manifest["counts"],
             "operating_points": points, "score_cache": relative(cache),
-            "eligibility": {**eligibility_summary(result, split), "answer_key": key_check},
+            "eligibility": {**eligibility_summary(result, split), "rt_personfit": key_check.pop("rt_personfit"),
+                            "answer_key": key_check},
             "metrics": evaluate_table(table, scores, thresholds, seed, with_breakdowns=True)}

@@ -110,7 +110,7 @@ SIM-BL test data identical to the main stage's (CSV SHA-256 prefix) in 20 of 20 
 
 ## Pre-declared contrasts (recall@5 %, pp; paired by seed)
 
-Paired percentile-bootstrap CI (10 000 resamples) and two-sided Wilcoxon signed-rank p, unadjusted. Slot rows compare the slot's FI type in FI→FI with its BL mechanism in FI→BL. 'Best unsupervised' = the main-stage detector (Rules, IF, IF + peers) with the highest mean SIM-BL recall on that subset (chosen on the same seeds, which favours the comparator).
+Paired percentile-bootstrap CI (10 000 resamples) and exact two-sided sign-flip permutation p, unadjusted. Slot rows compare the slot's FI type in FI→FI with its BL mechanism in FI→BL. 'Best unsupervised' = the main-stage detector (Rules, IF, IF + peers) with the highest mean SIM-BL recall on that subset (chosen on the same seeds, which favours the comparator).
 
 | Contrast | Model | Subset | comparator | Δ mean [95 % CI] | n | p |
 |---|---|---|---|---:|---:|---:|
@@ -124,10 +124,10 @@ Paired percentile-bootstrap CI (10 000 resamples) and two-sided Wilcoxon signed-
 | BL→BL − FI→BL | HGB + peers (15) (primary) | S2 excessive_changes↔lookup |  | 46.4 [40.2, 52.7] | 20 | <0.0001 |
 | BL→BL − best unsupervised on BL | HGB + peers (15) (primary) | S2 excessive_changes↔lookup | Rules | 47.6 [43.6, 51.9] | 20 | <0.0001 |
 | FI→FI − FI→BL | HGB + peers (15) (primary) | S3 collusion↔copy_peer |  | 35.0 [29.4, 40.5] | 20 | <0.0001 |
-| BL→BL − FI→BL | HGB + peers (15) (primary) | S3 collusion↔copy_peer |  | 10.7 [6.0, 15.1] | 20 | 0.0015 |
-| BL→BL − best unsupervised on BL | HGB + peers (15) (primary) | S3 collusion↔copy_peer | Rules | 9.7 [6.2, 13.2] | 20 | 0.0005 |
-| FI→FI − FI→BL | HGB + peers (15) (primary) | S4 score_jump↔proxy |  | -2.9 [-7.7, 2.2] | 20 | 0.2330 |
-| BL→BL − FI→BL | HGB + peers (15) (primary) | S4 score_jump↔proxy |  | 9.7 [3.8, 15.6] | 20 | 0.0064 |
+| BL→BL − FI→BL | HGB + peers (15) (primary) | S3 collusion↔copy_peer |  | 10.7 [6.0, 15.1] | 20 | 0.0004 |
+| BL→BL − best unsupervised on BL | HGB + peers (15) (primary) | S3 collusion↔copy_peer | Rules | 9.7 [6.2, 13.2] | 20 | <0.0001 |
+| FI→FI − FI→BL | HGB + peers (15) (primary) | S4 score_jump↔proxy |  | -2.9 [-7.7, 2.2] | 20 | 0.2795 |
+| BL→BL − FI→BL | HGB + peers (15) (primary) | S4 score_jump↔proxy |  | 9.7 [3.8, 15.6] | 20 | 0.0038 |
 | BL→BL − best unsupervised on BL | HGB + peers (15) (primary) | S4 score_jump↔proxy | Rules | 23.8 [18.8, 28.9] | 20 | <0.0001 |
 | FI→FI − FI→BL | HGB (12) | all |  | 38.0 [36.3, 39.8] | 20 | <0.0001 |
 | BL→BL − FI→BL | HGB (12) | all |  | 28.7 [26.4, 30.9] | 20 | <0.0001 |
@@ -139,11 +139,11 @@ Paired percentile-bootstrap CI (10 000 resamples) and two-sided Wilcoxon signed-
 | BL→BL − FI→BL | HGB (12) | S2 excessive_changes↔lookup |  | 52.3 [46.7, 57.3] | 20 | <0.0001 |
 | BL→BL − best unsupervised on BL | HGB (12) | S2 excessive_changes↔lookup | Rules | 45.9 [43.2, 48.9] | 20 | <0.0001 |
 | FI→FI − FI→BL | HGB (12) | S3 collusion↔copy_peer |  | 33.1 [27.7, 38.5] | 20 | <0.0001 |
-| BL→BL − FI→BL | HGB (12) | S3 collusion↔copy_peer |  | 8.1 [3.9, 12.1] | 20 | 0.0038 |
-| BL→BL − best unsupervised on BL | HGB (12) | S3 collusion↔copy_peer | Rules | -20.2 [-26.5, -14.3] | 20 | 0.0002 |
-| FI→FI − FI→BL | HGB (12) | S4 score_jump↔proxy |  | -0.9 [-4.0, 2.2] | 20 | 0.5067 |
-| BL→BL − FI→BL | HGB (12) | S4 score_jump↔proxy |  | 19.0 [13.9, 23.9] | 20 | 0.0002 |
-| BL→BL − best unsupervised on BL | HGB (12) | S4 score_jump↔proxy | Rules | 24.0 [19.2, 28.6] | 20 | 0.0001 |
+| BL→BL − FI→BL | HGB (12) | S3 collusion↔copy_peer |  | 8.1 [3.9, 12.1] | 20 | 0.0014 |
+| BL→BL − best unsupervised on BL | HGB (12) | S3 collusion↔copy_peer | Rules | -20.2 [-26.5, -14.3] | 20 | <0.0001 |
+| FI→FI − FI→BL | HGB (12) | S4 score_jump↔proxy |  | -0.9 [-4.0, 2.2] | 20 | 0.5750 |
+| BL→BL − FI→BL | HGB (12) | S4 score_jump↔proxy |  | 19.0 [13.9, 23.9] | 20 | <0.0001 |
+| BL→BL − best unsupervised on BL | HGB (12) | S4 score_jump↔proxy | Rules | 24.0 [19.2, 28.6] | 20 | <0.0001 |
 | FI→FI − FI→BL | LogReg + peers (15) | all |  | 35.4 [33.3, 37.6] | 20 | <0.0001 |
 | BL→BL − FI→BL | LogReg + peers (15) | all |  | 25.5 [23.4, 27.7] | 20 | <0.0001 |
 | BL→BL − best unsupervised on BL | LogReg + peers (15) | all | Rules | 33.3 [30.4, 36.3] | 20 | <0.0001 |
@@ -154,10 +154,10 @@ Paired percentile-bootstrap CI (10 000 resamples) and two-sided Wilcoxon signed-
 | BL→BL − FI→BL | LogReg + peers (15) | S2 excessive_changes↔lookup |  | 47.9 [42.8, 53.5] | 20 | <0.0001 |
 | BL→BL − best unsupervised on BL | LogReg + peers (15) | S2 excessive_changes↔lookup | Rules | 49.5 [44.8, 54.1] | 20 | <0.0001 |
 | FI→FI − FI→BL | LogReg + peers (15) | S3 collusion↔copy_peer |  | 26.9 [23.7, 30.1] | 20 | <0.0001 |
-| BL→BL − FI→BL | LogReg + peers (15) | S3 collusion↔copy_peer |  | -1.0 [-3.9, 2.0] | 20 | 0.5870 |
-| BL→BL − best unsupervised on BL | LogReg + peers (15) | S3 collusion↔copy_peer | Rules | 6.3 [1.9, 10.8] | 20 | 0.0166 |
-| FI→FI − FI→BL | LogReg + peers (15) | S4 score_jump↔proxy |  | -5.8 [-9.4, -2.2] | 20 | 0.0139 |
-| BL→BL − FI→BL | LogReg + peers (15) | S4 score_jump↔proxy |  | 18.2 [13.4, 23.4] | 20 | 0.0002 |
+| BL→BL − FI→BL | LogReg + peers (15) | S3 collusion↔copy_peer |  | -1.0 [-3.9, 2.0] | 20 | 0.5291 |
+| BL→BL − best unsupervised on BL | LogReg + peers (15) | S3 collusion↔copy_peer | Rules | 6.3 [1.9, 10.8] | 20 | 0.0146 |
+| FI→FI − FI→BL | LogReg + peers (15) | S4 score_jump↔proxy |  | -5.8 [-9.4, -2.2] | 20 | 0.0071 |
+| BL→BL − FI→BL | LogReg + peers (15) | S4 score_jump↔proxy |  | 18.2 [13.4, 23.4] | 20 | <0.0001 |
 | BL→BL − best unsupervised on BL | LogReg + peers (15) | S4 score_jump↔proxy | Rules | 24.7 [20.4, 29.5] | 20 | <0.0001 |
 | FI→FI − FI→BL | LogReg (12) | all |  | 37.8 [35.7, 39.8] | 20 | <0.0001 |
 | BL→BL − FI→BL | LogReg (12) | all |  | 34.5 [32.1, 36.8] | 20 | <0.0001 |
@@ -168,10 +168,10 @@ Paired percentile-bootstrap CI (10 000 resamples) and two-sided Wilcoxon signed-
 | FI→FI − FI→BL | LogReg (12) | S2 excessive_changes↔lookup |  | 85.9 [82.8, 88.8] | 20 | <0.0001 |
 | BL→BL − FI→BL | LogReg (12) | S2 excessive_changes↔lookup |  | 64.1 [59.2, 69.0] | 20 | <0.0001 |
 | BL→BL − best unsupervised on BL | LogReg (12) | S2 excessive_changes↔lookup | Rules | 49.3 [44.6, 53.8] | 20 | <0.0001 |
-| FI→FI − FI→BL | LogReg (12) | S3 collusion↔copy_peer |  | 3.5 [-2.5, 10.4] | 20 | 0.5274 |
-| BL→BL − FI→BL | LogReg (12) | S3 collusion↔copy_peer |  | -3.4 [-7.3, 0.4] | 20 | 0.1549 |
-| BL→BL − best unsupervised on BL | LogReg (12) | S3 collusion↔copy_peer | Rules | -22.9 [-29.1, -17.0] | 20 | 0.0001 |
-| FI→FI − FI→BL | LogReg (12) | S4 score_jump↔proxy |  | -5.1 [-8.5, -1.7] | 20 | 0.0097 |
+| FI→FI − FI→BL | LogReg (12) | S3 collusion↔copy_peer |  | 3.5 [-2.5, 10.4] | 20 | 0.3314 |
+| BL→BL − FI→BL | LogReg (12) | S3 collusion↔copy_peer |  | -3.4 [-7.3, 0.4] | 20 | 0.1125 |
+| BL→BL − best unsupervised on BL | LogReg (12) | S3 collusion↔copy_peer | Rules | -22.9 [-29.1, -17.0] | 20 | <0.0001 |
+| FI→FI − FI→BL | LogReg (12) | S4 score_jump↔proxy |  | -5.1 [-8.5, -1.7] | 20 | 0.0105 |
 | BL→BL − FI→BL | LogReg (12) | S4 score_jump↔proxy |  | 23.2 [17.9, 29.2] | 20 | <0.0001 |
 | BL→BL − best unsupervised on BL | LogReg (12) | S4 score_jump↔proxy | Rules | 23.6 [19.1, 28.5] | 20 | <0.0001 |
 

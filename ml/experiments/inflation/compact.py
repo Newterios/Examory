@@ -34,11 +34,16 @@ STAGE_FIELDS = {
                          "pauc_std", "average_precision", "ci_recall_low", "ci_recall_high"],
     "supervised": ["n_pos", "n_neg", "recall@5", "fpr@5", "precision@5", "recall@1", "fpr@1", "roc_auc",
                    "pauc_std", "average_precision", "ci_recall_low", "ci_recall_high"],
+    "fi-dose": ["n_pos", "n_neg", "recall@5", "fpr@5", "pauc_std"],
+    "protocol": ["n_pos", "n_neg", "recall@5", "fpr@5", "precision@5", "recall@1", "fpr@1", "roc_auc", "pauc_std"],
+    "baseline": ["n_pos", "n_neg", "recall@5", "fpr@5", "precision@5", "recall@1", "fpr@1", "roc_auc", "pauc_std",
+                 "average_precision", "ci_recall_low", "ci_recall_high"],
     "similarity": ["n_pos", "n_neg", "recall@5", "fpr@5", "precision@5", "recall@1", "fpr@1", "roc_auc",
                    "pauc_std", "average_precision", "ci_recall_low", "ci_recall_high"],
 }
 RUN_KEYS = ("seed", "condition", "source", "target", "tag", "config_id", "intensity", "split_counts",
-            "manipulation", "eligibility", "fit", "wall_seconds")
+            "manipulation", "eligibility", "fit", "lambda", "variant", "unobservable", "feature_diagnostics",
+            "items_affected", "contaminated_train_positives", "wall_seconds")
 
 
 def _get(row: dict[str, Any] | None, path: tuple[str, ...]) -> Any:
@@ -87,7 +92,7 @@ def slim_stage(stage: dict[str, Any]) -> dict[str, Any]:
     runs = []
     for run in stage["runs"]:
         slim = {k: run[k] for k in RUN_KEYS if k in run
-                and not (k == "split_counts" and name in ("dose", "sensitivity", "transfer"))}
+                and not (k == "split_counts" and name in ("dose", "sensitivity", "transfer", "fi-dose"))}
         slim["data"] = _data(run.get("data"))
         if "target_data" in run:
             slim["data"] = {"source": _data(run["source_data"]), "target": _data(run["target_data"])}

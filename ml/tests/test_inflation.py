@@ -21,8 +21,8 @@ from sklearn.metrics import roc_auc_score
 from ml.anomaly.evaluate import metrics as frozen_metrics
 from ml.anomaly.train import choose_threshold
 from ml.experiments.inflation import analyze as analyze_module
+from ml.experiments.inflation import review, similarity, supervised
 from ml.experiments.inflation import run as run_module
-from ml.experiments.inflation import similarity, supervised
 from ml.experiments.inflation.common import (
     BL_TYPES,
     FI_TYPES,
@@ -182,7 +182,14 @@ class StatsTests(unittest.TestCase):
         self.assertAlmostEqual(result["mean"], diff.mean())
         self.assertLessEqual(result["low"], result["mean"])
         self.assertGreaterEqual(result["high"], result["mean"])
-        self.assertAlmostEqual(result["p"], scipy_stats.wilcoxon(diff).pvalue)
+        self.assertAlmostEqual(result["p_wilcoxon"], scipy_stats.wilcoxon(diff).pvalue)
+        # exact sign-flip: enumerate all 2^6 patterns by brute force
+        import itertools
+        sums = [abs(sum(s * d for s, d in zip(signs, diff, strict=True)))
+                for signs in itertools.product((-1, 1), repeat=len(diff))]
+        self.assertAlmostEqual(result["p"], np.mean(np.array(sums) >= abs(diff.sum()) - 1e-12))
+        self.assertEqual(result["test"], "sign-flip")
+        self.assertAlmostEqual(result["mcse"], diff.std(ddof=1) / np.sqrt(len(diff)))
         self.assertEqual(paired_difference([0.1, 0.2], [0.1, 0.2])["p"], 1.0)
         self.assertEqual(paired_difference([0.1, None], [0.2, 0.3])["n"], 1)
         self.assertEqual(paired_difference(x, y, seed=5), paired_difference(x, y, seed=5))
@@ -490,6 +497,141 @@ class PostHocStageTests(unittest.TestCase):
             committed = expand_stage(read_json(stages / "supervised.json"))
             self.assertAlmostEqual(committed["runs"][0]["metrics"]["hgb"]["all"]["at_0.05"]["recall"],
                                    sup["runs"][0]["metrics"]["hgb"]["all"]["at_0.05"]["recall"], places=5)
+
+
+class ReviewTests(unittest.TestCase):
+    """Stages and statistics added after independent review (15 Nov 2026)."""
+
+    def test_sign_flip_exact(self) -> None:
+        from ml.experiments.inflation.stats import sign_flip_p
+        self.assertEqual(sign_flip_p([1.0, 1.0, 1.0]), 0.25)          # 2 of 8 patterns reach |3|
+        self.assertEqual(sign_flip_p([1.0, -1.0, 2.0]), 0.75)
+        self.assertEqual(sign_flip_p([0.5] * 20), 2 / 2 ** 20)        # smallest attainable p for n = 20
+        self.assertGreater(sign_flip_p(np.arange(1.0, 26.0)), 0)       # n > 20: Monte Carlo fallback
+
+    def test_prcc(self) -> None:
+        from ml.experiments.inflation.stats import prcc
+        rng = np.random.default_rng(0)
+        x = rng.random((80, 4))
+        y = 3 * x[:, 0] - 2 * x[:, 2] + rng.normal(0, 0.2, 80)
+        result = prcc(x, list(y))
+        self.assertGreater(result[0]["prcc"], 0.8)
+        self.assertLess(result[2]["prcc"], -0.7)
+        self.assertLess(abs(result[1]["prcc"]), 0.3)
+        self.assertEqual(result[0]["df"], 80 - 2 - 3)
+        self.assertIsNone(prcc(x[:4], [1.0, 2.0, 3.0, 4.0])[0]["prcc"])  # too few rows
+
+    def test_decorrelated_lhs(self) -> None:
+        unit, info = review.decorrelated_lhs(60, 14, 20261115)
+        for column in unit.T:
+            self.assertEqual(sorted(np.floor(column * 60).astype(int)), list(range(60)))  # still a Latin hypercube
+        rho = review.spearman_matrix(unit)
+        self.assertLessEqual(np.abs(rho[~np.eye(14, dtype=bool)]).max(), 0.10 + 1e-12)
+        self.assertAlmostEqual(info["max_abs_spearman"], np.abs(rho[~np.eye(14, dtype=bool)]).max())
+        np.testing.assert_array_equal(unit, review.decorrelated_lhs(60, 14, 20261115)[0])
+
+    def test_mechanism_and_parameter_files(self) -> None:
+        base = REPO / "sim/params/mechanisms.json"
+        with tempfile.TemporaryDirectory() as directory:
+            half = read_json(review.write_fi_dose_mechanisms(0.5, base, Path(directory) / "m.json"))
+            one = read_json(review.write_fi_dose_mechanisms(1.0, base, Path(directory) / "one.json"))
+            original = read_json(base)
+            self.assertEqual(one, original)
+            for name in review.FI_DOSE_PARAMETERS:
+                self.assertAlmostEqual(half["fi"][name], 0.5 * original["fi"][name])
+            self.assertEqual(half["fi"]["collusion_forced_wrong_fraction"], original["fi"]["collusion_forced_wrong_fraction"])
+            self.assertEqual({k: v for k, v in half.items() if k != "fi"}, {k: v for k, v in original.items() if k != "fi"})
+            values = {**run_module.sensitivity_configs(1)[0], "fi.rapid_item_prob": 0.8,
+                      "fi.changes_prob_multiplier": 1.25, "fi.collusion_submit_window_ms": 1234.4,
+                      "fi.score_jump_multiplier": 1.5}
+            v2 = read_json(review.write_mechanisms_v2(values, base, Path(directory) / "v2.json"))
+            self.assertEqual(v2["fi"]["changes_prob_high"], 0.9375)
+            self.assertEqual(v2["fi"]["changes_prob_low"], 0.5625)
+            self.assertEqual(v2["fi"]["collusion_submit_window_ms"], 1234)
+            self.assertAlmostEqual(v2["fi"]["score_jump_high"], 0.48)
+            self.assertEqual(v2["copy_peer"]["coverage"], values["copy_peer.coverage"])
+            params = REPO / "ml/ednet/calibration.json"
+            if params.exists():
+                scaled = read_json(review.write_revision_params(0.25, params, Path(directory) / "p.json"))
+                self.assertAlmostEqual(scaled["revision"]["change_mult_wrong"],
+                                       0.25 * read_json(params)["revision"]["change_mult_wrong"])
+
+    def test_label_free_and_final_only(self) -> None:
+        import pandas as pd
+        table = pd.DataFrame({"split": [1] * 20 + [2] * 6, "is_anomaly": [0] * 20 + [0, 0, 0, 0, 1, 1],
+                              "anomaly_type": ["none"] * 24 + ["lookup", "proxy"],
+                              "is_final_attempt": [True] * 20 + [False, False, True, True, True, True],
+                              "group_id": ["g"] * 26})
+        scores = {"d": np.r_[np.arange(20.0), [100.0, 0.0, 100.0, 0.0, 50.0, 1.0]]}
+        points = review.label_free_points(table, scores)
+        self.assertAlmostEqual(points["d"]["0.05"]["threshold"], np.quantile(np.arange(20.0), 0.95))
+        thresholds = {"d": {"0.05": 18.0, "0.01": 19.0}}
+        final = review.final_only_metrics(table, scores, thresholds, 0)["d"]
+        self.assertEqual(final["final_only:all"]["at_0.05"]["fpr"], 0.5)        # 1 of the 2 final normals
+        self.assertEqual(final["final_only:all"]["at_0.05"]["recall"], 0.5)
+        self.assertEqual(final["final_only:slot:S2"]["n_pos"], 1)
+
+    def test_personfit_hand_computed(self) -> None:
+        def attempt(times):
+            return {"attempt_id": "a", "quiz_id": "q", "variant_id": "v",
+                    "first_times": {f"i{k}": t for k, t in enumerate(times)}}
+        # Additive log times: ln t = beta_k - tau_i exactly -> residuals 0 except where perturbed.
+        betas, taus = np.log([1000.0, 2000.0, 4000.0]), [0.0, 0.5, -0.3, 0.2]
+        train = [attempt(np.exp(betas - tau)) for tau in taus]
+        train[0]["first_times"]["i0"] *= np.e  # one perturbed cell gives every item a residual spread
+        model = similarity.fit_response_time_model(train)
+        beta = np.array([model["beta"][json.dumps(["q", "v", f"i{k}"])] for k in range(3)])
+        sigma = np.array([model["sigma"][json.dumps(["q", "v", f"i{k}"])] for k in range(3)])
+        logs = np.log([1500.0, 2000.0, 9000.0])
+        tau = np.mean(beta - logs)
+        expected = np.sum(((logs - (beta - tau)) / sigma) ** 2)
+        scores, coverage = similarity.response_time_person_fit([attempt(np.exp(logs))], model)
+        self.assertAlmostEqual(scores[0], expected)
+        self.assertEqual(coverage, 1.0)
+        # alternating means reached a fixed point: tau_i = mean(beta - ln t) and beta_k = mean(ln t + tau)
+        for a_ in train:
+            ln = np.log([a_["first_times"][f"i{k}"] for k in range(3)])
+            t = np.mean(beta - ln)
+            self.assertLess(abs(np.mean([np.log(b["first_times"]["i0"]) + np.mean(
+                beta - np.log([b["first_times"][f"i{k}"] for k in range(3)])) for b in train]) - beta[0]), 1e-9)
+            self.assertTrue(np.isfinite(t))
+
+    def test_review_stages_with_stub(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="examory-review-") as directory:
+            root = Path(directory)
+            stub = root / "examory-sim"
+            stub.write_text(STUB.format(python=sys.executable,
+                                        generator=REPO / "ml/datasets/generate_quiz_behavior.py"))
+            stub.chmod(0o755)
+            exp, stages = root / "exp", root / "stages"
+            common = ["--students", "200", "--seeds", "7", "--workers", "1", "--exp-root", str(exp),
+                      "--sim-binary", str(stub)]
+            main = run_module.main(["main", *common, "--output", str(stages / "main.json")])
+            protocol = run_module.main(["protocol", *common, "--output", str(stages / "protocol.json")])
+            dose = run_module.main(["fi-dose", *common, "--lambdas", "0.5", "1.0", "--intensities", "1.0",
+                                    "--output", str(stages / "fi_dose.json")])
+            self.assertEqual(list((exp / "data").glob("*/*/*.csv")), [])
+            by_main = {r["condition"]: r for r in main["runs"]}
+            for run in protocol["runs"]:
+                if run["variant"] == "standard":
+                    self.assertEqual(run["metrics"]["iforest"]["all"]["at_0.05"],
+                                     by_main[run["condition"]]["metrics"]["iforest"]["all"]["at_0.05"])
+                self.assertIn("final_only:all", run["metrics"]["quantile_rules"])
+            self.assertEqual({r["variant"] for r in protocol["runs"]}, set(review.PROTOCOL_VARIANTS))
+            # The stub's SIM-BL attempts are the honest ones relabelled: every cheater is event-identical.
+            standard_bl = next(r for r in protocol["runs"] if r["condition"] == "SIM-BL" and r["variant"] == "standard")
+            self.assertTrue(all(v["event_identical"] == v["n"] for v in standard_bl["unobservable"].values()))
+            contaminated = next(r for r in protocol["runs"] if r["condition"] == "LEGACY"
+                                and r["variant"] == "contaminated")
+            self.assertGreater(contaminated["contaminated_train_positives"], 0)
+            self.assertEqual({r.get("lambda") for r in dose["runs"] if r["condition"] == "SIM-FI"}, {0.5, 1.0})
+            summary = analyze_module.analyze(stages, root / "out", figures=True)
+            self.assertIn("protocol", summary)
+            self.assertIn("fi_dose", summary)
+            self.assertIn("subpopulations", summary)
+            self.assertTrue((root / "out/figures/F8_fi_dose.png").exists())
+            for name in ("protocol.md", "fi_dose.md", "subpopulations.md", "pvalue_changes.md"):
+                self.assertTrue((root / "out/tables" / name).exists(), name)
 
 
 if __name__ == "__main__":

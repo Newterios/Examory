@@ -167,13 +167,18 @@ def ensure_legacy(seed: int, design: dict[str, Any], root: Path = EXP_DATA) -> t
 def ensure_sim(seed: int, design: dict[str, Any], worlds: tuple[str, ...], params: Path,
                mechanisms: Path = SIM_MECHANISMS, item_sampling: str | None = None,
                intensity: float | None = None, root: Path = EXP_DATA,
-               binary: Path = SIM_BINARY) -> tuple[Path, dict[str, Any]]:
+               binary: Path = SIM_BINARY, extra_args: tuple[str, ...] | list[str] | None = None
+               ) -> tuple[Path, dict[str, Any]]:
+    """``extra_args`` (e.g. flags of a newer simulator build) enter the spec only when given, so the
+    data directories of every earlier stage keep their spec hash."""
     if not binary.exists():
         raise FileNotFoundError(f"simulator binary {relative(binary)} not built")
     spec = {"generator": "examory-sim", "binary_sha256": sha256_file(binary), "seed": seed, **design,
             "worlds": list(worlds), "params_sha256": sha256_file(params),
             "mechanisms_sha256": sha256_file(mechanisms), "item_sampling": item_sampling,
             "intensity": intensity}
+    if extra_args:
+        spec["extra_args"] = list(extra_args)
     directory = root / "data" / "sim" / sha256_text(canonical(spec))[:16]
     command = [str(binary), "generate", "--students", str(design["students"]),
                "--attempts", str(design["attempts"]), "--questions", str(design["questions"]),
@@ -184,6 +189,8 @@ def ensure_sim(seed: int, design: dict[str, Any], worlds: tuple[str, ...], param
         command += ["--item-sampling", item_sampling]
     if intensity is not None:
         command += ["--intensity", repr(intensity)]
+    if extra_args:
+        command += list(extra_args)
     outputs = [f"{w}.csv" for w in worlds] + ["truth.csv", "manifest.json"]
     record = _generate(directory, command, outputs, spec)
     record = dict(record, params=relative(params), mechanisms=relative(mechanisms))

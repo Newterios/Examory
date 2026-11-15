@@ -225,6 +225,8 @@ def evaluate_table(table: pd.DataFrame, scores: dict[str, np.ndarray],
             fields = list(BREAKDOWN_FIELDS.get(kind, ()))
             if kind == "copy_peer":
                 fields += [c[len("truth_"):] for c in table.columns if c.startswith("truth_") and "sync" in c]
+                # simulator >= 0.3.0 with a closing time (absent in every earlier dataset)
+                fields += [c[len("truth_"):] for c in table.columns if c == "truth_auto_submitted"]
             for field in fields:
                 column = f"truth_{field}"
                 if column not in table:
