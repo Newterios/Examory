@@ -1,8 +1,8 @@
 % Conference version for the 2027 IEEE 7th International Conference on Smart
 % Information Systems and Technologies (SIST), Astana, 12-14 May 2027.
 % Requirements: IEEE two-column conference format, A4, 4-6 pages, English, PDF.
-% Every number is taken from docs/11_paper/manuscript.md, which is checked
-% against ml/experiments/inflation/results/tables/.
+% Every number was checked against the generated tables in
+% ml/experiments/inflation/results/tables/ (see README.md in this folder).
 % Build: see README.md in this folder.
 \documentclass[conference,a4paper]{IEEEtran}
 \IEEEoverridecommandlockouts
@@ -225,7 +225,7 @@ Behavior $\rightarrow$ behavior & 69.6 & 77.2 & 75.6 & 75.2 & 34.5 \\
 The two classical indices are affected in the same way (Table~\ref{tab:sub}). An answer-similarity statistic detects 94.8\% of injected collusion and 47.0\% of behavior-level copying on all answers, and 99.9\% and 50.4\% when restricted to incorrect answers (the variant shown in the table). It is as inflated by the injection as the peer features are, but it does not depend on synchrony and exceeds IF+peers on pairs that submit separately. The response-time person-fit statistic detects 38.6\% of injected rapid responders and 9.4\% of behavior-level pre-knowledge. Of three further unsupervised detectors, the local outlier factor \cite{breunig2000lof} and a one-class support vector machine \cite{scholkopf2001support} reproduce the pattern of Table~\ref{tab:main} for look-up and peer copying and detect 40.9\% and 44.4\% of behavior-level cheating overall, against 36.2\% for the best frozen detector; a minimum-covariance-determinant detector detects 25.0\%.
 
 \subsection{Low Prevalence and Real Logs}
-With cheating on 5\% of final attempts (realized FPR 3.2--4.2\%), the precision of the rules is 34.0\% on the original generator, 27.4\% under injection and 15.0\% under behavior-level cheating; for IF+peers it is 17--20\% in all three conditions.
+With cheating on 5\% of final attempts (realized FPR 3.2--4.2\%), the precision of the rules is 34.0\% on the original generator, 27.4\% under injection and 15.0\% under behavior-level cheating; for IF+peers the mean is 17--20\% in all three conditions, with a wide interval under behavior-level cheating (10.6--26.5\%).
 
 Over 10 replicates, a classifier separates real EdNet attempts from attempts of the original generator almost perfectly (area under the curve 0.999) and from the calibrated simulator with 0.830 on timing, change and score features. Detectors without peer features (IF, and the rules restricted to the attempt-level features) that were fitted on the original generator flag 31.5\% and 39.1\% of real attempts at a nominal 5\%; fitted on the calibrated simulator they flag 11.4\% and 22.0\%. IF+peers flags 12.9\% and 5.3\%, but peer features are not meaningful in logs without a common timed quiz. When IF is refitted on real attempts it flags 4.9\% of them, but 12.6\% of the attempts in the fastest quartile of answer time.
 
