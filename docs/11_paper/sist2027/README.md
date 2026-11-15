@@ -37,9 +37,10 @@ The paper fits Track 4, Computational Intelligence: "Applications of Computation
 1. **Author block.** The paper has two authors, the student (first author) and the supervisor, whose name is written as in his earlier publications. E-mail addresses are required by the template but are not kept in this public repository: copy `authors.example.tex` to `authors.local.tex` (git-ignored), fill it in, and build `submission.tex`; the result, `submission.pdf`, is the file to upload. ORCID identifiers are optional.
 2. **Acknowledgment.** The section thanks the team member who developed the detector pipeline and the original generator. Still to add: funding, if any, and the disclosure that IEEE requires when AI-generated content is used in a paper (the IEEE policy asks for it in the acknowledgments section). The place is marked in `paper.tex`.
 3. **Similarity check.** The long version of the article is in this public repository. It has not been published, but a similarity service may index it. If the conference asks, state that the repository is the authors' own supplementary material; alternatively move the long draft out of the public tree before submission.
-4. **Subject areas in CMT.** Primary: Computational Intelligence (applications in education); secondary: Computer Science (testing methods and tools).
-5. **Registration fee.** According to the supervisor's message of 24 Oct 2026, the fee is covered by the supervisor when he is a co-author.
-6. **Later journal version.** The long manuscript can be submitted to a journal afterwards as an extended version; IEEE expects such a version to cite the conference paper and to contain substantial new material, which it does (sensitivity analysis, protocol variants, real-data strata, scoping survey).
+4. **Repository state.** The paper says that the simulator, the calibration and all results are available at the repository URL, and that the list of surveyed studies is published with the code. This holds only after the branch `LMS-35-behaviour-simulation` is merged into `main`, so merge it before submitting. The repository has no licence file; add one if the simulator is to be called open.
+5. **Subject areas in CMT.** Primary: Computational Intelligence (applications in education); secondary: Computer Science (testing methods and tools).
+6. **Registration fee.** According to the supervisor's message of 24 Oct 2026, the fee is covered by the supervisor when he is a co-author.
+7. **Later journal version.** The long manuscript can be submitted to a journal afterwards as an extended version; IEEE expects such a version to cite the conference paper and to contain substantial new material, which it does (sensitivity analysis, protocol variants, real-data strata, scoping survey).
 
 ## Build
 
@@ -65,4 +66,4 @@ tectonic -X compile docs/11_paper/sist2027/submission.tex
 
 `make_refs.py` copies the cited entries from `../references.bib` into `refs.bib` (without the `note` fields, which IEEEtran would print). `make_fig_dose.py` redraws the dose figure from `ml/experiments/inflation/results/stages/fi_dose.json`. The source also compiles with pdfLaTeX, XeLaTeX or LuaLaTeX (for example on Overleaf, after uploading `paper.tex`, `refs.bib` and `fig_dose.pdf`).
 
-Every number in the paper is taken from `docs/11_paper/manuscript.md`, which was checked against the generated tables in `ml/experiments/inflation/results/tables/`.
+Every number in the paper was checked on 15 Nov 2026 against the generated tables in `ml/experiments/inflation/results/tables/` and the stage outputs in `results/stages/` (about 290 values); the 29 references that have a DOI were compared with their Crossref records. The acknowledgment can take about 45 more words (funding, AI-use disclosure) before the paper exceeds six pages.
