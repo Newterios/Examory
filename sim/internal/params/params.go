@@ -105,6 +105,39 @@ type Model struct {
 	Gap           LogNormal       `json:"gap"`
 	Review        LogNormal       `json:"review"`
 	MinResponseMs int64           `json:"min_response_ms"`
+	// QuizWindow is optional; when absent (or close_after_ms is 0) quizzes
+	// have no closing time.
+	QuizWindow QuizWindow `json:"quiz_window,omitempty"`
+}
+
+// QuizWindow is a fixed closing time per sitting: the quiz closes
+// CloseAfterMs after the sitting opens, and every attempt still running is
+// auto-submitted at the close plus U{0..AutoSubmitJitterMs}. CloseAfterMs = 0
+// disables the window.
+type QuizWindow struct {
+	CloseAfterMs       int64 `json:"close_after_ms"`
+	AutoSubmitJitterMs int64 `json:"auto_submit_jitter_ms,omitempty"`
+}
+
+// Defaults and bounds of the quiz window.
+const (
+	DefaultAutoSubmitJitterMs = 2000
+	// MaxCloseAfterMs is one day: sittings of consecutive attempts open one
+	// day apart, so a window must close before the next sitting opens.
+	MaxCloseAfterMs     = 86400000
+	MaxAutoSubmitJitter = 3600000
+)
+
+// Validate range-checks the window (0 disables it). The lower bound relative
+// to the start-offset range is checked by world.Config.Validate.
+func (w QuizWindow) Validate() error {
+	if w.CloseAfterMs < 0 || w.CloseAfterMs > MaxCloseAfterMs {
+		return fmt.Errorf("quiz_window.close_after_ms must lie in [0, %d] (0 disables the window), got %d", MaxCloseAfterMs, w.CloseAfterMs)
+	}
+	if w.AutoSubmitJitterMs < 0 || w.AutoSubmitJitterMs > MaxAutoSubmitJitter {
+		return fmt.Errorf("quiz_window.auto_submit_jitter_ms must lie in [0, %d], got %d", MaxAutoSubmitJitter, w.AutoSubmitJitterMs)
+	}
+	return nil
 }
 
 // Preknowledge parameterises the leaked-item mechanism.
@@ -235,7 +268,8 @@ func readFile(path string) ([]byte, string, error) {
 
 // ParseModel decodes and validates honest-model JSON.
 func ParseModel(raw []byte) (*Model, error) {
-	var m Model
+	// Optional fields keep these values when absent from the file.
+	m := Model{QuizWindow: QuizWindow{AutoSubmitJitterMs: DefaultAutoSubmitJitterMs}}
 	if err := decode(raw, &m); err != nil {
 		return nil, err
 	}
@@ -491,6 +525,9 @@ func (m *Model) Validate() error {
 		if sd.v > 5 {
 			c.fail("%s must be <= 5, got %v", sd.n, sd.v)
 		}
+	}
+	if err := m.QuizWindow.Validate(); err != nil {
+		c.fail("%v", err)
 	}
 	return c.err
 }

@@ -167,10 +167,23 @@ func AppendAttempt(rows []Row, seed int64, r *world.Record) []Row {
 	}
 	dur := a.Duration()
 	payload := `{"attempt_id":"` + attemptID + `","quiz_id":"` + QuizID + `","variant_id":"` + VariantID +
-		`","score":` + strconv.Itoa(a.Score()) + `,"max_score":` + strconv.Itoa(len(a.Items)) +
+		`","score":` + strconv.Itoa(a.Score()) + `,"max_score":` + strconv.Itoa(MaxScore(a)) +
 		`,"duration_ms":` + strconv.FormatInt(dur, 10) + `,"answers_changed":` + strconv.Itoa(a.Changes()) + `}`
 	emit(dur, "quiz.submitted", payload, "submitted")
 	return rows
+}
+
+// MaxScore returns the max_score written for an attempt: the number of
+// questions, except for an attempt auto-submitted by the quiz window, where it
+// is the number of answered questions. The frozen read_attempts (and
+// Validate) require max_score to equal the number of questions with events,
+// so an unanswered question cannot be represented as a zero-point question;
+// score still counts only correct answers saved before the close.
+func MaxScore(a *model.Attempt) int {
+	if a.AutoSubmit > 0 {
+		return a.Answered()
+	}
+	return len(a.Items)
 }
 
 // WriteCSV writes rows with the legacy CSV dialect (CRLF, minimal quoting).

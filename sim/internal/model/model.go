@@ -207,11 +207,25 @@ type ItemResult struct {
 	Time   int64   // solution-behaviour response-time draw T (even if rapid)
 }
 
-// Final returns the final option.
-func (r ItemResult) Final() int { return r.Events[len(r.Events)-1].Option }
+// Answered reports whether the item has at least one saved answer (false
+// only for items left unanswered when the quiz window closed).
+func (r ItemResult) Answered() bool { return len(r.Events) > 0 }
+
+// Final returns the final option, or -1 for an unanswered item.
+func (r ItemResult) Final() int {
+	if len(r.Events) == 0 {
+		return -1
+	}
+	return r.Events[len(r.Events)-1].Option
+}
 
 // Changes returns the number of change events.
-func (r ItemResult) Changes() int { return len(r.Events) - 1 }
+func (r ItemResult) Changes() int {
+	if len(r.Events) == 0 {
+		return 0
+	}
+	return len(r.Events) - 1
+}
 
 // Clone deep-copies the result.
 func (r ItemResult) Clone() ItemResult {
@@ -372,6 +386,11 @@ type Attempt struct {
 	Results []ItemResult
 	Draws   []Draws
 	Review  int64 // pause between leaving the last item and submitting
+	// AutoSubmit, when > 0, is the submission time (ms since start) imposed
+	// by the quiz window (see Close); answers at or after the close have been
+	// removed, so trailing items may be unanswered. 0 means the attempt was
+	// submitted naturally.
+	AutoSubmit int64
 }
 
 // Start returns the Unix ms of the attempt start.
@@ -390,12 +409,33 @@ func (a *Attempt) Shown() []int64 {
 
 // Duration returns ms from attempt start to submission.
 func (a *Attempt) Duration() int64 {
+	if a.AutoSubmit > 0 {
+		return a.AutoSubmit
+	}
+	return a.NaturalDuration()
+}
+
+// NaturalDuration returns ms from attempt start to the submission the
+// student's own timeline implies, ignoring any quiz window.
+func (a *Attempt) NaturalDuration() int64 {
 	n := len(a.Results)
 	shown := a.Shown()
 	return shown[n-1] + a.Results[n-1].Dwell + a.Review
 }
 
-// Score returns the number of items whose final answer is the key.
+// Answered returns the number of items with at least one saved answer.
+func (a *Attempt) Answered() int {
+	n := 0
+	for _, r := range a.Results {
+		if r.Answered() {
+			n++
+		}
+	}
+	return n
+}
+
+// Score returns the number of items whose final answer is the key
+// (unanswered items score zero).
 func (a *Attempt) Score() int {
 	s := 0
 	for q, r := range a.Results {
@@ -432,7 +472,13 @@ func (a *Attempt) Check() error {
 	}
 	dur := a.Duration()
 	shown := a.Shown()
+	if a.AutoSubmit > 0 && a.Answered() == 0 {
+		return fmt.Errorf("attempt %d/%d: auto-submitted without any answer", a.Student, a.Index)
+	}
 	for q, r := range a.Results {
+		if len(r.Events) == 0 && a.AutoSubmit > 0 {
+			continue // left unanswered when the quiz closed
+		}
 		if len(r.Events) == 0 || r.Events[0].IsChange {
 			return fmt.Errorf("attempt %d/%d item %d: missing first answer", a.Student, a.Index, q)
 		}
@@ -450,7 +496,7 @@ func (a *Attempt) Check() error {
 			if j > 0 && e.Option == r.Events[j-1].Option {
 				return fmt.Errorf("attempt %d/%d item %d: change to the same option", a.Student, a.Index, q)
 			}
-			if e.SinceShown < 0 || shown[q]+e.SinceShown > dur {
+			if e.SinceShown < 0 || shown[q]+e.SinceShown > dur || (a.AutoSubmit > 0 && shown[q]+e.SinceShown >= dur) {
 				return fmt.Errorf("attempt %d/%d item %d: event outside attempt", a.Student, a.Index, q)
 			}
 			prev = e.SinceShown

@@ -202,3 +202,37 @@ func TestSyncSubmitOptionalFields(t *testing.T) {
 		}
 	}
 }
+
+func TestQuizWindowOptionalFields(t *testing.T) {
+	raw := readRepoFile(t, "default.json")
+	m, err := ParseModel(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.QuizWindow.CloseAfterMs != 0 || m.QuizWindow.AutoSubmitJitterMs != DefaultAutoSubmitJitterMs {
+		t.Fatalf("absent quiz_window: %+v, want disabled with default jitter", m.QuizWindow)
+	}
+	set := func(w map[string]any) []byte {
+		return mutate(t, raw, func(m map[string]any) { m["quiz_window"] = w })
+	}
+	m, err = ParseModel(set(map[string]any{"close_after_ms": 1800000}))
+	if err != nil || m.QuizWindow.CloseAfterMs != 1800000 || m.QuizWindow.AutoSubmitJitterMs != DefaultAutoSubmitJitterMs {
+		t.Fatalf("close only: %v %+v", err, m)
+	}
+	m, err = ParseModel(set(map[string]any{"close_after_ms": 1800000, "auto_submit_jitter_ms": 0}))
+	if err != nil || m.QuizWindow.AutoSubmitJitterMs != 0 {
+		t.Fatalf("explicit zero jitter not honoured: %v %+v", err, m)
+	}
+	for name, w := range map[string]map[string]any{
+		"missing-close": {"auto_submit_jitter_ms": 100},
+		"neg-close":     {"close_after_ms": -1},
+		"huge-close":    {"close_after_ms": 86400001},
+		"frac-close":    {"close_after_ms": 1.5},
+		"neg-jitter":    {"close_after_ms": 1800000, "auto_submit_jitter_ms": -1},
+		"huge-jitter":   {"close_after_ms": 1800000, "auto_submit_jitter_ms": 3600001},
+	} {
+		if _, err := ParseModel(set(w)); err == nil || !strings.Contains(err.Error(), "_ms") {
+			t.Fatalf("%s: want a quiz_window error, got %v", name, err)
+		}
+	}
+}

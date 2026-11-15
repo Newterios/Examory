@@ -152,3 +152,123 @@ func TestWorldSubset(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func readManifest(t *testing.T, dir string) Manifest {
+	t.Helper()
+	var man Manifest
+	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &man); err != nil {
+		t.Fatal(err)
+	}
+	return man
+}
+
+func truthHeader(t *testing.T, dir string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, "truth.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.SplitN(string(raw), "\r\n", 2)[0]
+}
+
+func TestQuizWindowFlagAndParams(t *testing.T) {
+	off := filepath.Join(t.TempDir(), "off")
+	if code, _, stderr := runCLI(baseArgs(off)...); code != 0 {
+		t.Fatal(stderr)
+	}
+	if man := readManifest(t, off); man.QuizWindow != nil || man.Args["close_after_ms"] != float64(0) {
+		t.Fatalf("window recorded although off: %+v %v", man.QuizWindow, man.Args["close_after_ms"])
+	}
+	if strings.Contains(truthHeader(t, off), "auto_submitted") {
+		t.Fatal("window columns written although the window is off")
+	}
+
+	flag := filepath.Join(t.TempDir(), "flag")
+	if code, _, stderr := runCLI(append(baseArgs(flag), "--close-after-ms", "1200000", "--auto-submit-jitter-ms", "500")...); code != 0 {
+		t.Fatal(stderr)
+	}
+	man := readManifest(t, flag)
+	if w := man.QuizWindow; w == nil || w.CloseAfterMs != 1200000 || w.AutoSubmitJitterMs != 500 || w.Source != "flag" ||
+		w.AutoSubmitted["honest"] == 0 || w.AutoSubmitted["bl"] == 0 {
+		t.Fatalf("manifest quiz_window %+v", man.QuizWindow)
+	}
+	if !strings.HasSuffix(truthHeader(t, flag), ",auto_submitted,answered_items,natural_duration_ms,natural_score") {
+		t.Fatalf("truth header %q", truthHeader(t, flag))
+	}
+	if code, out, stderr := runCLI("validate", filepath.Join(flag, "honest.csv"), filepath.Join(flag, "bl.csv")); code != 0 || !strings.Contains(out, `"attempts":360`) {
+		t.Fatalf("validate failed: %d %s %s", code, out, stderr)
+	}
+
+	// The same window from the parameter file gives the same outputs; the
+	// flag overrides the file, and 0 disables the window.
+	raw, err := os.ReadFile("../../params/default.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["quiz_window"] = map[string]any{"close_after_ms": 1200000, "auto_submit_jitter_ms": 500}
+	b, _ := json.Marshal(m)
+	pfile := filepath.Join(t.TempDir(), "window.json")
+	if err := os.WriteFile(pfile, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withParams := func(dir string, extra ...string) []string {
+		args := baseArgs(dir)
+		for i := range args {
+			if args[i] == "--params" {
+				args[i+1] = pfile
+			}
+		}
+		return append(args, extra...)
+	}
+	fromFile := filepath.Join(t.TempDir(), "file")
+	if code, _, stderr := runCLI(withParams(fromFile)...); code != 0 {
+		t.Fatal(stderr)
+	}
+	if readManifest(t, fromFile).QuizWindow.Source != "params" {
+		t.Fatal("window source not recorded")
+	}
+	for _, name := range []string{"honest.csv", "fi.csv", "bl.csv", "truth.csv"} {
+		a, _ := os.ReadFile(filepath.Join(flag, name))
+		c, _ := os.ReadFile(filepath.Join(fromFile, name))
+		if !bytes.Equal(a, c) {
+			t.Fatalf("%s differs between flag and parameter-file window", name)
+		}
+	}
+	disabled := filepath.Join(t.TempDir(), "disabled")
+	if code, _, stderr := runCLI(withParams(disabled, "--close-after-ms", "0")...); code != 0 {
+		t.Fatal(stderr)
+	}
+	for _, name := range []string{"honest.csv", "fi.csv", "bl.csv", "truth.csv"} {
+		a, _ := os.ReadFile(filepath.Join(off, name))
+		c, _ := os.ReadFile(filepath.Join(disabled, name))
+		if !bytes.Equal(a, c) {
+			t.Fatalf("%s: --close-after-ms 0 does not reproduce the window-off output", name)
+		}
+	}
+
+	for _, c := range [][]string{
+		{"--close-after-ms", "-1"},
+		{"--close-after-ms", "x"},
+		{"--close-after-ms", "1.5"},
+		{"--close-after-ms", "600000"},
+		{"--close-after-ms", "86400001"},
+		{"--close-after-ms", "1200000", "--auto-submit-jitter-ms", "-5"},
+		{"--close-after-ms", "1200000", "--auto-submit-jitter-ms", "3600001"},
+	} {
+		out := filepath.Join(t.TempDir(), "o")
+		if code, _, stderr := runCLI(append(baseArgs(out), c...)...); code != 2 || stderr == "" {
+			t.Fatalf("%v: exit %d stderr %q", c, code, stderr)
+		}
+		if _, err := os.Stat(out); err == nil {
+			t.Fatalf("%v: output directory created despite invalid input", c)
+		}
+	}
+}

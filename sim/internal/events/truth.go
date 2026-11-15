@@ -19,6 +19,9 @@ var TruthColumns = []string{
 	"duration_ms", "start_offset_ms", "proxy_theta", "sync_submit",
 }
 
+// WindowColumns are appended to TruthColumns when the quiz window is enabled.
+var WindowColumns = []string{"auto_submitted", "answered_items", "natural_duration_ms", "natural_score"}
+
 func ff(v float64) string {
 	if math.IsNaN(v) {
 		return ""
@@ -37,7 +40,7 @@ func TruthRow(seed int64, r *world.Record) []string {
 	if r.IsAnomaly {
 		isAnomaly = "1"
 	}
-	return []string{
+	row := []string{
 		r.World, AttemptID(seed, a.Student, a.Index), world.StudentID(a.Student), world.GroupID(a.Student),
 		strconv.Itoa(a.Index), strconv.FormatBool(r.IsFinal), r.Slot, r.AnomalyType, isAnomaly, r.Role, partner,
 		ff(r.Intensity), strconv.Itoa(r.ItemsAffected), ff(r.Person.Theta), ff(r.Person.Tau),
@@ -45,6 +48,15 @@ func TruthRow(seed int64, r *world.Record) []string {
 		r.Flag, strconv.Itoa(a.Score()), strconv.Itoa(len(a.Items)), strconv.Itoa(a.Changes()),
 		strconv.FormatInt(a.Duration(), 10), strconv.FormatInt(a.Offset, 10), ff(r.ProxyTheta), syncCell(r.SyncSubmit),
 	}
+	if r.Natural != nil {
+		auto := "0"
+		if a.AutoSubmit > 0 {
+			auto = "1"
+		}
+		row = append(row, auto, strconv.Itoa(a.Answered()),
+			strconv.FormatInt(r.Natural.Duration(), 10), strconv.Itoa(r.Natural.Score()))
+	}
+	return row
 }
 
 // WriteTruth writes truth.csv for the given worlds in order.
@@ -52,7 +64,11 @@ func WriteTruth(w io.Writer, seed int64, worlds []string, res *world.Result) err
 	bw := bufio.NewWriterSize(w, 1<<20)
 	cw := csv.NewWriter(bw)
 	cw.UseCRLF = true
-	if err := cw.Write(TruthColumns); err != nil {
+	header := TruthColumns
+	if res.Window {
+		header = append(append([]string(nil), TruthColumns...), WindowColumns...)
+	}
+	if err := cw.Write(header); err != nil {
 		return err
 	}
 	for _, name := range worlds {

@@ -23,7 +23,7 @@ import (
 )
 
 // Version is the simulator version recorded in every manifest.
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 var errHelp = errors.New("help requested")
 
@@ -102,6 +102,20 @@ func parseStart(v string) (time.Time, error) {
 	return t, nil
 }
 
+// parseMs parses an optional non-negative integer millisecond flag; "" means
+// "use the parameter file".
+func parseMs(name, v string, dst *int64) (bool, error) {
+	if v == "" {
+		return false, nil
+	}
+	x, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || x < 0 {
+		return false, fmt.Errorf("%s must be a non-negative integer number of milliseconds", name)
+	}
+	*dst = x
+	return true, nil
+}
+
 // outDirReady creates dir, or refuses a non-empty existing dir without force.
 func outDirReady(dir string, force bool) error {
 	info, err := os.Stat(dir)
@@ -169,6 +183,17 @@ type Manifest struct {
 	Mechanisms map[string]map[string]int `json:"mechanism_flags"`
 	// SyncSubmit counts copy_peer pairs by sync_submit (bl world only).
 	SyncSubmit map[string]int `json:"copy_peer_sync_submit_pairs,omitempty"`
+	// QuizWindow is present only when the quiz window is enabled.
+	QuizWindow *WindowInfo `json:"quiz_window,omitempty"`
+}
+
+// WindowInfo records the quiz-window setting and its effect.
+type WindowInfo struct {
+	CloseAfterMs       int64  `json:"close_after_ms"`
+	AutoSubmitJitterMs int64  `json:"auto_submit_jitter_ms"`
+	Source             string `json:"source"` // "params" or "flag" (close_after_ms)
+	// AutoSubmitted counts auto-submitted attempts per world.
+	AutoSubmitted map[string]int `json:"auto_submitted"`
 }
 
 // FileRef names a file and its SHA-256.
@@ -199,6 +224,8 @@ func generate(args []string, stdout, stderr io.Writer) error {
 	mechPath := fs.String("mechanisms", "sim/params/mechanisms.json", "mechanism parameter file")
 	sampling := fs.String("item-sampling", world.SamplingFixed, "fixed | per-attempt")
 	intensityArg := fs.String("intensity", "", "optional override in [0,1] of every mechanism's per-item coverage/propensity (proxy: ability-gain scale)")
+	closeArg := fs.String("close-after-ms", "", "optional override of quiz_window.close_after_ms: every sitting closes this many ms after it opens and running attempts are auto-submitted (0 disables)")
+	jitterArg := fs.String("auto-submit-jitter-ms", "", "optional override of quiz_window.auto_submit_jitter_ms (default 2000): auto-submission happens at close + U{0..jitter}")
 	worldsArg := fs.String("worlds", "honest,fi,bl", "comma-separated subset of honest,fi,bl")
 	outDir := fs.String("out-dir", "", "output directory (required)")
 	force := fs.Bool("force", false, "allow writing into a non-empty out-dir")
@@ -242,10 +269,21 @@ func generate(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	win := m.QuizWindow
+	windowSource := "params"
+	if set, err := parseMs("close-after-ms", *closeArg, &win.CloseAfterMs); err != nil {
+		return err
+	} else if set {
+		windowSource = "flag"
+	}
+	if _, err := parseMs("auto-submit-jitter-ms", *jitterArg, &win.AutoSubmitJitterMs); err != nil {
+		return err
+	}
 	cfg := &world.Config{
 		Students: *students, Attempts: *attempts, Questions: *questions,
 		AnomalyRate: *rate, Weights: weights, Seed: *seed, StartAt: start,
 		Model: m, Mech: mech, ItemSampling: *sampling, Intensity: intensity, Worlds: worlds,
+		CloseAfterMs: win.CloseAfterMs, AutoSubmitJitterMs: win.AutoSubmitJitterMs,
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -267,6 +305,7 @@ func generate(args []string, stdout, stderr io.Writer) error {
 			"seed": cfg.Seed, "start_at": events.FormatTime(start.UnixMilli()),
 			"params": *paramsPath, "mechanisms": *mechPath, "item_sampling": cfg.ItemSampling,
 			"intensity": intensity, "worlds": worlds,
+			"close_after_ms": cfg.CloseAfterMs, "auto_submit_jitter_ms": cfg.AutoSubmitJitterMs,
 		},
 		Params: map[string]FileRef{
 			"params":     {Path: *paramsPath, SHA256: mSum},
@@ -274,6 +313,10 @@ func generate(args []string, stdout, stderr io.Writer) error {
 		},
 		Outputs: map[string]FileRef{}, Quotas: quotas,
 		Counts: map[string]WorldCounts{}, Mechanisms: map[string]map[string]int{},
+	}
+	if cfg.WindowEnabled() {
+		man.QuizWindow = &WindowInfo{CloseAfterMs: cfg.CloseAfterMs, AutoSubmitJitterMs: cfg.AutoSubmitJitterMs,
+			Source: windowSource, AutoSubmitted: map[string]int{}}
 	}
 	for _, w := range worlds {
 		recs := res.Worlds[w]
@@ -304,6 +347,9 @@ func generate(args []string, stdout, stderr io.Writer) error {
 				}
 			}
 			wc.AttemptsByType[kind]++
+			if man.QuizWindow != nil && r.Attempt.AutoSubmit > 0 {
+				man.QuizWindow.AutoSubmitted[w]++
+			}
 		}
 		man.Counts[w] = wc
 		man.Mechanisms[w] = flags

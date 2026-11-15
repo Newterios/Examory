@@ -44,7 +44,15 @@ type Config struct {
 	ItemSampling string
 	Intensity    *float64 // overrides mechanism coverage/propensity when set
 	Worlds       []string
+	// CloseAfterMs > 0 enables the quiz window: every sitting closes
+	// CloseAfterMs after it opens, and attempts still running are
+	// auto-submitted at the close plus U{0..AutoSubmitJitterMs}. 0 disables it.
+	CloseAfterMs       int64
+	AutoSubmitJitterMs int64
 }
+
+// WindowEnabled reports whether the quiz window is on.
+func (c *Config) WindowEnabled() bool { return c.CloseAfterMs > 0 }
 
 // Record is one attempt in one world with its ground truth.
 type Record struct {
@@ -62,6 +70,9 @@ type Record struct {
 	Flag          string
 	ProxyTheta    float64
 	SyncSubmit    int // 1/0 for copy_peer pairs, -1 otherwise
+	// Natural is the attempt before the quiz window was applied (equal to
+	// Attempt when it was submitted naturally); nil when the window is off.
+	Natural *model.Attempt
 }
 
 // Result holds every world.
@@ -69,6 +80,7 @@ type Result struct {
 	Labels  *Labels
 	Persons []model.Person
 	Worlds  map[string][]*Record // records ordered by (attempt index, student)
+	Window  bool                 // the quiz window was enabled
 }
 
 // Validate checks a configuration independently of the CLI.
@@ -90,6 +102,12 @@ func (c *Config) Validate() error {
 		return errors.New("intensity must lie in [0, 1]")
 	case len(c.Worlds) == 0:
 		return errors.New("at least one world is required")
+	case c.CloseAfterMs < 0 || c.CloseAfterMs > params.MaxCloseAfterMs:
+		return fmt.Errorf("close-after-ms must lie in [0, %d] (0 disables the quiz window)", params.MaxCloseAfterMs)
+	case c.CloseAfterMs > 0 && c.CloseAfterMs <= model.OffsetMaxMs:
+		return fmt.Errorf("close-after-ms (%d) must exceed the start-offset range of %d ms, or every late starter would find the quiz closed", c.CloseAfterMs, model.OffsetMaxMs)
+	case c.AutoSubmitJitterMs < 0 || c.AutoSubmitJitterMs > params.MaxAutoSubmitJitter:
+		return fmt.Errorf("auto-submit-jitter-ms must lie in [0, %d]", params.MaxAutoSubmitJitter)
 	}
 	var total float64
 	for _, w := range c.Weights {
@@ -128,10 +146,30 @@ type sim struct {
 	fixed   []model.Item
 	persons []model.Person
 	honest  [][]*model.Attempt // [attempt][student]
+	closed  [][]*model.Attempt // honest attempts after the quiz window
 }
 
 func (s *sim) base(k int) int64 {
 	return s.cfg.StartAt.UnixMilli() + int64(k)*86400000
+}
+
+// close applies the quiz window to attempt a (a itself when the window is off
+// or a was submitted before the close). The sitting opens at a.Base; the
+// auto-submission jitter comes from the attempt's own stream, so it is the
+// same in every world and shifts no other draw.
+func (s *sim) close(a *model.Attempt) (*model.Attempt, error) {
+	if !s.cfg.WindowEnabled() {
+		return a, nil
+	}
+	jitter := rng.New(s.cfg.Seed, "auto-submit", a.Student, a.Index).IntRange(0, s.cfg.AutoSubmitJitterMs)
+	c, err := model.Close(a, a.Base+s.cfg.CloseAfterMs, jitter)
+	if err == nil && c != a {
+		err = c.Check()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("quiz window: %s, attempt index %d: %w", StudentID(a.Student), a.Index, err)
+	}
+	return c, nil
 }
 
 func (s *sim) poolSample(st *rng.Stream, n int) []model.Item {
@@ -215,6 +253,23 @@ func Generate(cfg *Config) (*Result, error) {
 			s.honest[k][i] = model.Simulate(s.m, cfg.Seed, i, k, s.base(k), model.ResponderOf(s.persons[i], k), s.items(i, k), nil)
 		}
 	}
+	// The window is applied after every mechanism has built its timeline
+	// from the natural honest attempts; non-cheater attempts are closed once
+	// and shared by all worlds.
+	s.closed = s.honest
+	if cfg.WindowEnabled() {
+		s.closed = make([][]*model.Attempt, cfg.Attempts)
+		for k := range s.closed {
+			s.closed[k] = make([]*model.Attempt, cfg.Students)
+			for i, h := range s.honest[k] {
+				c, err := s.close(h)
+				if err != nil {
+					return nil, err
+				}
+				s.closed[k][i] = c
+			}
+		}
+	}
 	final := cfg.Attempts - 1
 	// Base attempts of cheaters' final attempts. Collusion pairs answer the
 	// same items: in per-attempt mode both members are re-simulated on the
@@ -229,7 +284,7 @@ func Generate(cfg *Config) (*Result, error) {
 		return model.Simulate(s.m, cfg.Seed, i, final, s.base(final), model.ResponderOf(s.persons[i], final), lo.Items, nil)
 	}
 
-	res := &Result{Labels: labels, Persons: s.persons, Worlds: map[string][]*Record{}}
+	res := &Result{Labels: labels, Persons: s.persons, Worlds: map[string][]*Record{}, Window: cfg.WindowEnabled()}
 	for _, w := range cfg.Worlds {
 		overrides := map[int]*Record{}
 		switch w {
@@ -255,15 +310,28 @@ func Generate(cfg *Config) (*Result, error) {
 						if err := r.Attempt.Check(); err != nil {
 							return nil, fmt.Errorf("world %s: %w", w, err)
 						}
+						if cfg.WindowEnabled() {
+							// Each member of a pair is closed independently,
+							// after the paired timeline was built.
+							c, err := s.close(r.Attempt)
+							if err != nil {
+								return nil, fmt.Errorf("world %s: %w", w, err)
+							}
+							r.Natural, r.Attempt = r.Attempt, c
+						}
 						recs = append(recs, r)
 						continue
 					}
 				}
-				recs = append(recs, &Record{
-					World: w, Attempt: s.honest[k][i], Person: s.persons[i], Slot: slot,
+				r := &Record{
+					World: w, Attempt: s.closed[k][i], Person: s.persons[i], Slot: slot,
 					AnomalyType: "none", IsFinal: k == final, Partner: -1,
 					Intensity: math.NaN(), ProxyTheta: math.NaN(), SyncSubmit: -1,
-				})
+				}
+				if cfg.WindowEnabled() {
+					r.Natural = s.honest[k][i]
+				}
+				recs = append(recs, r)
 			}
 		}
 		res.Worlds[w] = recs

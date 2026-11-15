@@ -186,7 +186,64 @@ duration = shown_{n−1} + dwell_{n−1} + review
 `time_since_shown_ms` is the wall-clock time since the item was first shown
 (cumulative for changes); `time_since_attempt_start_ms = shown_q +
 time_since_shown_ms`. Attempt `k` starts at
-`start-at + k days + offset`, `offset ~ U{0..600000}` ms (legacy).
+`start-at + k days + offset`, `offset ~ U{0..600000}` ms (legacy). The
+instant `start-at + k days` is the *sitting open* of round `k`: every
+student's `k`-th attempt is one sitting, opened at the same instant for all
+cohorts.
+
+### 2.4a Quiz window (optional, off by default; added in 0.3.0)
+
+Without a window an attempt is submitted whenever the student's timeline
+ends. With `close_after_ms = C > 0` every sitting closes at
+`close_k = sitting_open_k + C`:
+
+* An attempt whose natural submission (`start + duration` above) is not
+  later than `close_k` is unchanged (the same object as without a window).
+* Otherwise it is **auto-submitted** at
+  `close_k + J`, `J ~ U{0..auto_submit_jitter_ms}` (default 2000), from
+  the attempt's own stream `auto-submit(i,k)`, which is drawn only for
+  windowed runs and shifts no other variate. Every answer or revision event
+  at or after `close_k` is dropped; because events within an item are
+  strictly increasing and items are answered in order, the kept events are a
+  prefix of each item's events (same event ids, same times) and the answered
+  items are a prefix of the quiz. Item display times, gaps and the review
+  pause are not altered, so nothing before the close moves.
+* `score` counts the correct final answers saved before the close;
+  `answers_changed` counts the kept change events; `duration_ms` is
+  `close_k + J − start`.
+* The window is applied *after* every world is built from the natural
+  attempts: mechanisms and recipes act on the natural honest attempt, and
+  the resulting cheater attempt (each member of a `copy_peer` / fi
+  `collusion` pair independently, after the paired timeline incl.
+  synchronised submission and copier follow-ups) is then closed. A
+  non-cheater attempt is closed once and shared by all three worlds, so the
+  paired-world properties of §1 hold with the window on (tested); an attempt
+  auto-submitted in several worlds gets the same `J` in each.
+* **Unanswered questions and `max_score`.** The event contract has no event
+  for an unanswered question, and the frozen `read_attempts` (re-implemented
+  by the Go validator) requires `max_score` to equal the number of questions
+  that have events. For an auto-submitted attempt `max_score` is therefore
+  the number of *answered* questions, not the quiz length, so the detector's
+  `score_percent = 100·score/max_score` is a percentage of the answered
+  questions (an unanswered question contributes neither a point nor a
+  denominator). `truth.csv` keeps `max_score` = quiz length and adds
+  `answered_items`. Naturally submitted attempts are unaffected.
+* **Configurations rejected.** `C` must exceed the start-offset range
+  (600000 ms), must not exceed one day (the next sitting opens one day
+  later), and `auto_submit_jitter_ms` must lie in [0, 3600000]. Because a
+  `quiz.submitted` event needs at least one answer, a run in which some
+  attempt (e.g. a `copy_peer` copier starting after its source, or a late
+  starter whose first answer falls after the close) has no answer before
+  the close fails with an error asking for a larger `close_after_ms`
+  instead of silently dropping the attempt.
+
+Configured by the optional honest-model block
+`"quiz_window": {"close_after_ms": C, "auto_submit_jitter_ms": J}`
+(`auto_submit_jitter_ms` optional) or by `--close-after-ms` /
+`--auto-submit-jitter-ms`, which override the file. With the window off
+(absent block, `close_after_ms` 0, or `--close-after-ms 0`) the event CSVs
+and `truth.csv` are byte-identical to simulator 0.2.0 (tested against the
+0.2.0 seed-42 hashes for both item-sampling designs).
 
 ### 2.5 Default honest parameters (`params/default.json`)
 
@@ -212,6 +269,8 @@ time_since_shown_ms`. Attempt `k` starts at
 | `gap.log_ms_mean`, `log_sd` | 7.3, 0.5 | inter-item gap (median ≈ 1.5 s) |
 | `review.log_ms_mean`, `log_sd` | 9.9, 0.8 | review pause (median ≈ 20 s) |
 | `min_response_ms` | 500 | floor of solution-behaviour times |
+| `quiz_window.close_after_ms` (optional) | absent = 0 (off) | §2.4a |
+| `quiz_window.auto_submit_jitter_ms` (optional) | 2000 | §2.4a |
 
 These defaults are literature-style priors, not estimates (`source.kind` is
 `defaults`). An EdNet-calibrated file in the same schema (with a non-empty
@@ -389,7 +448,7 @@ honest attempt of the same student (constants in `mechanisms.json → fi`).
 |---|---|
 | `honest.csv`, `fi.csv`, `bl.csv` | event logs, one per world requested with `--worlds` |
 | `truth.csv` | one row per attempt per world with latent variables |
-| `manifest.json` | arguments, parameter-file SHA-256s, simulator and Go version, per-output SHA-256, quotas, counts by type, counts by mechanism flag, `copy_peer_sync_submit_pairs` (sync / nosync pair counts) |
+| `manifest.json` | arguments (incl. `close_after_ms`, `auto_submit_jitter_ms`; 0 = no window), parameter-file SHA-256s, simulator and Go version, per-output SHA-256, quotas, counts by type, counts by mechanism flag, `copy_peer_sync_submit_pairs` (sync / nosync pair counts), and, only with the window on, `quiz_window` (setting, `source` = `params`/`flag`, auto-submitted attempts per world) |
 
 ### Event CSV
 
@@ -414,7 +473,9 @@ the legacy generator.
   time_since_shown_ms, is_change, time_since_attempt_start_ms, answer_hash`;
   `quiz.submitted` payload: `attempt_id, quiz_id, variant_id, score,
   max_score, duration_ms, answers_changed`. `score` counts correct final
-  answers; `answers_changed` counts change events.
+  answers; `answers_changed` counts change events; `max_score` is the number
+  of questions (of answered questions for an attempt auto-submitted by the
+  quiz window, §2.4a).
 
 The Go validator (`internal/events/validate.go`, `examory-sim validate`)
 re-implements every check of `read_attempts` and additionally requires
@@ -440,6 +501,13 @@ final answers.
 | proxy_theta | θ' of the proxy |
 | sync_submit | 1/0 for both members of a copy_peer pair (sync-submitting or not); empty for other rows |
 
+With the quiz window on (§2.4a) four columns are appended (absent
+otherwise, so window-off files are unchanged): `auto_submitted` (1/0),
+`answered_items`, `natural_duration_ms` and `natural_score` (duration and
+score the attempt would have had without the window). `score`,
+`answers_changed` and `duration_ms` are the realised (closed) values;
+`max_score` stays the quiz length.
+
 ## 6. Randomness and reproducibility
 
 Every stream is `PCG(seed₁, seed₂)` from `math/rand/v2`, where
@@ -458,7 +526,7 @@ Streams: `person(i)`, `item(j)` / `quiz` / `attempt-items(i,k)` /
 `lookup-item(i,k,q)`, `proxy(i)`, `copy-pair(lo,k)`, `copy-lag(lo,k)`,
 `copy-item(copier,k,q)`, `fi-rapid(i,k,q)`, `fi-changes(i,k,q)`,
 `fi-scorejump(i,k)`, `fi-collusion-pair(leader,k)`,
-`fi-collusion-member(i,k)`). Because no stream is shared, adding or changing
+`fi-collusion-member(i,k)`, and `auto-submit(i,k)` for the quiz window). Because no stream is shared, adding or changing
 a mechanism cannot shift any other variate.
 
 The same arguments and parameter files give byte-identical outputs
@@ -482,13 +550,17 @@ examory-sim generate \
   --params sim/params/default.json --mechanisms sim/params/mechanisms.json \
   --item-sampling fixed            # or per-attempt
   [--intensity 0.5]                # optional override in [0,1]
+  [--close-after-ms 1800000]       # optional quiz window (§2.4a); overrides quiz_window in --params
+  [--auto-submit-jitter-ms 2000]
   --worlds honest,fi,bl \
   --out-dir ml/datasets/raw/sim/seed42 [--force]
 
 examory-sim validate ml/datasets/raw/sim/seed42/bl.csv
 ```
 
-All flags shown have the displayed defaults except `--out-dir` (required).
+All flags shown have the displayed defaults except `--out-dir` (required)
+and the bracketed optional overrides (default: the parameter file; no quiz
+window in the shipped files).
 Invalid arguments or parameter files produce an error message and exit code
 2; an existing non-empty `--out-dir` is refused unless `--force` (which
 overwrites the output files only). Files are written atomically. Parameter
@@ -524,7 +596,8 @@ Tests: `cd sim && go test -race ./...`.
    non-final attempts, groups larger than two, adaptive cheaters who react
    to the detector, and collusion across cohorts are not modelled.
 4. **Response model.** Local independence given θ; no item position,
-   fatigue or time-pressure effects; no time limit; linear navigation
+   fatigue or time-pressure effects; no time limit by default (see item 12
+   for the optional closing time); linear navigation
    (except copier follow-ups, which revisit items); a constant `c` per item;
    rapid-guess propensity independent of θ and of the item; revisions
    independent of response time.
@@ -562,6 +635,24 @@ Tests: `cd sim && go test -race ./...`.
     world's disfavour. The value 0.5 is an assumption, not an estimate; no
     other parameter was changed, and results should be reported for
     `sync_submit_prob = 0` as well.
+12. **Quiz window (0.3.0, optional).** The closing time only *truncates*
+    the natural timeline. Students do not know about or react to the
+    deadline: nobody speeds up, skips items, guesses quickly on the
+    remaining questions or submits early because time is running out, and
+    nobody starts later in response to the window; the review pause before
+    a natural submission is not shortened. Start offsets keep the legacy
+    `U{0..600000}` ms rather than clustering at the opening. Auto-submission
+    happens at the close plus a uniform server-side lag, and an answer
+    being typed at the close is lost (no "save on close"). Cheaters are
+    truncated by the same rule but do not adapt either (e.g. a copier does
+    not hurry to finish before the close). There is one window per sitting
+    shared by all cohorts; per-student time limits (a duration cap measured
+    from each student's own start) are not modelled. `max_score` of an
+    auto-submitted attempt counts the answered questions only (§2.4a), a
+    concession to the frozen feature pipeline, so `score_percent` of a
+    truncated attempt is a percentage of what was answered. The closing
+    time is a design choice, not an estimate; it should be reported (e.g.
+    as a quantile of natural honest submission times) with results.
 10. **Synthetic results are synthetic.** Detection rates on these data
     measure how a detector responds to the simulated behaviours; they are
     not estimates of real-misconduct detection rates.
