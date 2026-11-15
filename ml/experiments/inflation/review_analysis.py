@@ -293,7 +293,12 @@ PROTOCOL_LABEL = {"standard": "main protocol", "label_free": "(i) label-free thr
                   "contaminated": "(ii) contaminated fitting"}
 
 
-def protocol_summary(stage: dict[str, Any], main: dict[str, Any] | None) -> dict[str, Any]:
+H1_SUBSETS = ("slot:S3", "slot:S4", "all")
+
+
+def protocol_summary(stage: dict[str, Any], main: dict[str, Any] | None,
+                     reference_name: str = "main.json") -> dict[str, Any]:
+    """``main`` is the stage the standard rows must reproduce (main or prevalence)."""
     a = _a()
     runs, seeds = stage["runs"], _seeds(stage)
     conditions = [c for c in ("LEGACY", "SIM-FI", "SIM-BL") if any(r["condition"] == c for r in runs)]
@@ -314,6 +319,24 @@ def protocol_summary(stage: dict[str, Any], main: dict[str, Any] | None) -> dict
                         a.series(runs, seeds, d, subset, "recall@5", condition="SIM-FI", variant=variant),
                         a.series(runs, seeds, d, subset, "recall@5", condition="SIM-BL", variant=variant), seed=SEED)
                     deltas.append({"variant": variant, "detector": d, "subset": subset, **test})
+    h1 = []
+    if "SIM-BL" in conditions:
+        for variant in variants:
+            for subset in H1_SUBSETS:
+                forest = a.series(runs, seeds, "iforest", subset, "recall@5", condition="SIM-BL", variant=variant)
+                rules = a.series(runs, seeds, "quantile_rules", subset, "recall@5", condition="SIM-BL", variant=variant)
+                h1.append({"variant": variant, "subset": subset, "iforest": mean_ci(forest, seed=SEED),
+                           "rules": mean_ci(rules, seed=SEED), **paired_difference(forest, rules, seed=SEED)})
+    contamination = {}
+    for condition in conditions:
+        shares = []
+        for r in runs:
+            if r["condition"] == condition and r.get("variant") == "standard" and r.get("split_counts"):
+                train = r["split_counts"]["train"]
+                shares.append(train["anomalies"] / train["attempts"])
+        if shares:
+            contamination[condition] = {"mean_share_train_cheaters": float(np.mean(shares)),
+                                        "min": float(np.min(shares)), "max": float(np.max(shares))}
     check = None
     if main:
         diffs = []
@@ -323,7 +346,8 @@ def protocol_summary(stage: dict[str, Any], main: dict[str, Any] | None) -> dict
                     ours = a.series(runs, seeds, d, subset, "recall@5", condition=condition, variant="standard")
                     ref = a.series(main["runs"], seeds, d, subset, "recall@5", condition=condition)
                     diffs += [abs(x - y) for x, y in zip(ours, ref, strict=True) if x is not None and y is not None]
-        check = {"max_abs_recall_difference_vs_main": max(diffs) if diffs else None, "compared": len(diffs)}
+        check = {"max_abs_recall_difference_vs_main": max(diffs) if diffs else None, "compared": len(diffs),
+                 "reference": reference_name}
     diagnostics = {}
     for condition in conditions:
         rows = [r["feature_diagnostics"] for r in runs if r["condition"] == condition and r.get("feature_diagnostics")]
@@ -331,15 +355,20 @@ def protocol_summary(stage: dict[str, Any], main: dict[str, Any] | None) -> dict
             diagnostics[condition] = {k: float(np.mean([r[k] for r in rows if r[k] is not None]))
                                       for k in rows[0] if isinstance(rows[0][k], (int, float))}
     return {"conditions": conditions, "variants": variants, "seeds": seeds, "cells": cells, "deltas": deltas,
+            "h1": h1, "train_contamination": contamination, "anomaly_rate": (stage.get("design") or {}).get("anomaly_rate"),
             "standard_vs_main": check, "feature_diagnostics": diagnostics,
             "label_free_quantiles": stage.get("label_free_quantiles")}
 
 
-def md_protocol(summary: dict[str, Any]) -> str:
+def md_protocol(summary: dict[str, Any], low_prevalence: bool = False) -> str:
     a = _a()
     conditions, variants = summary["conditions"], summary["variants"]
-    parts = ["# Post hoc: robustness of the evaluation protocol (exploratory)", "",
-             ("**Added after independent review (amendment of 15 Nov 2026).** Main configuration, seeds "
+    title = ("# Post hoc: robustness of the evaluation protocol at low prevalence (exploratory)" if low_prevalence
+             else "# Post hoc: robustness of the evaluation protocol (exploratory)")
+    configuration = (f"Low-prevalence configuration of the `prevalence` stage (anomaly-rate {summary['anomaly_rate']}, "
+                     "≈ 5 % of final attempts), seeds " if low_prevalence else "Main configuration, seeds ")
+    parts = [title, "",
+             ("**Added after independent review (amendment of 15 Nov 2026).** " + configuration +
               f"{min(summary['seeds'])}–{max(summary['seeds'])}, frozen detectors. (i) label-free threshold: "
               "`numpy.quantile` (linear interpolation) at 0.95 of the scores of validation normal attempts, no positives "
               "used; (ii) contaminated fitting: train-cohort cheaters presented to the frozen pipeline as normal "
@@ -348,8 +377,13 @@ def md_protocol(summary: dict[str, Any]) -> str:
               "normal attempts only (positives exist only among final attempts). Mean over seeds [95 % CI], %."), ""]
     if summary.get("standard_vs_main"):
         c = summary["standard_vs_main"]
-        parts += [(f"Check: the `main protocol` rows reproduce `main.json` (max |Δ recall| = "
+        parts += [(f"Check: the `main protocol` rows reproduce `{c.get('reference', 'main.json')}` (max |Δ recall| = "
                    f"{c['max_abs_recall_difference_vs_main']} over {c['compared']} seed × cells)."), ""]
+    if summary.get("train_contamination"):
+        text = "; ".join(f"{c} {100 * v['mean_share_train_cheaters']:.2f} % (range {100 * v['min']:.2f}–{100 * v['max']:.2f})"
+                         for c, v in summary["train_contamination"].items())
+        parts += [("Share of train-cohort attempts that are cheaters, i.e. presented as normal under (ii) "
+                   f"contaminated fitting (mean over seeds): {text}."), ""]
     for variant in variants:
         rows = []
         for d in DETECTORS:
@@ -392,8 +426,20 @@ def md_protocol(summary: dict[str, Any]) -> str:
                   a.table(["Detector", "Condition", "FPR, all attempts", "FPR, final attempts", "precision, all",
                            "precision, final"] + [f"precision final, {s}" for s in SLOTS], rows,
                           "|---|---|" + "---:|" * (4 + len(SLOTS))), ""]
-        if variant != "standard":
-            break  # final-attempt view shown for the main protocol and the label-free threshold only
+        if variant != "standard" and not low_prevalence:
+            break  # main configuration: final-attempt view for the main protocol and the label-free threshold
+    if summary.get("h1"):
+        rows = []
+        for t in summary["h1"]:
+            name = "all" if t["subset"] == "all" else _slot_name(t["subset"][5:])
+            rows.append([PROTOCOL_LABEL[t["variant"]], name, a.fmt_ci(t["iforest"], "recall@5"),
+                         a.fmt_ci(t["rules"], "recall@5"), a.fmt_ci(t, "recall@5"), a.fmt_p(t["p"])])
+        parts += ["## H1 contrast on SIM-BL: recall(IF + peers) − recall(Rules), pp, paired by seed", "",
+                  ("Exact sign-flip permutation p, unadjusted (the pre-specified H1 test is the main-protocol S3/S4 "
+                   "pair with Holm over the 2 slots, `h1.md`; the main-protocol rows here repeat its estimates). "
+                   "H1 decision rule: ≥ 15 pp supported, < 5 pp rules adopted."), "",
+                  a.table(["Protocol", "Subset", "IF + peers recall", "Rules recall", "gain [95 % CI]", "p"], rows,
+                          "|---|---|---:|---:|---:|---:|"), ""]
     return "\n".join(parts)
 
 
@@ -753,7 +799,8 @@ def _walk_p(prefix: str, value: Any, out: dict[str, tuple[float, float]]) -> Non
 def crossed_p_values(summary: dict[str, Any]) -> list[dict[str, Any]]:
     """Every paired test in the summary whose side of 0.05 differs between Wilcoxon and sign-flip."""
     pairs: dict[str, tuple[float, float]] = {}
-    for key in ("inflation", "h1", "copy_peer_sync", "robust_detectors", "supervised", "protocol", "baseline"):
+    for key in ("inflation", "h1", "copy_peer_sync", "robust_detectors", "supervised", "protocol", "protocol_prevalence",
+                "baseline"):
         if key in summary:
             _walk_p(key, summary[key], pairs)
     rows = []

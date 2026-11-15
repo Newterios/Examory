@@ -418,6 +418,7 @@ def ednet_summary(stage: dict[str, Any]) -> dict[str, Any]:
                             ci_seeds.append(run["seed"])
                 out["flag_rates"][f"{source}|{detector}|{rate}"] = {
                     **mean_ci(values, seed=SEED),
+                    "per_seed_min": min(values) if values else None, "per_seed_max": max(values) if values else None,
                     "first_seed_cohort_ci": list(widths[0]) if widths else None,
                     "first_seed": ci_seeds[0] if ci_seeds else None}
             strata: dict[str, Any] = {}
@@ -626,17 +627,25 @@ def md_ednet(summary: dict[str, Any]) -> str:
     for key, value in summary["flag_rates"].items():
         source, detector, rate = key.split("|")
         ci = value.get("first_seed_cohort_ci")
-        rows.append([source, detector, f"{100 * float(rate):.0f} %", fmt_ci(value, "fpr@5"),
+        spread = ("NA" if value.get("per_seed_min") is None else
+                  f"{100 * value['per_seed_min']:.1f} – {100 * value['per_seed_max']:.1f}")
+        rows.append([source, detector, f"{100 * float(rate):.0f} %", fmt_ci(value, "fpr@5"), spread,
                      "NA" if not ci else f"[{100 * ci[0]:.1f}, {100 * ci[1]:.1f}]",
                      "peer features" if detector in ("iforest", "quantile_rules") else ""])
     n_seeds = max((v.get("n") or 0) for v in summary["flag_rates"].values()) if summary["flag_rates"] else 0
     parts += [(f"Two different intervals: the across-seed interval is the 95 % percentile bootstrap of the mean "
                f"flag rate over the {n_seeds} seeds (between-replicate variation); the cohort-bootstrap interval "
                f"is the within-run 95 % interval (500 resamples of EdNet test cohorts) of seed {first_seed} only "
-               "(sampling variation of one deployment)."), "",
+               "(sampling variation of one deployment). The per-seed range (minimum – maximum over the seeds) shows the "
+               "between-replicate spread: the across-seed interval is for the mean and is much narrower than the spread "
+               "of single runs, so one seed's cohort-bootstrap interval can lie outside it. quantile_rules and "
+               "quantile_rules_no_peers coincide whenever the threshold is set by a non-peer feature: EdNet attempts "
+               "have no synchronous peers (all three peer features are 0), so the peer columns never reach the maximum "
+               "of the rule score; under P2 (EdNet training data, peer features constant) they coincide in every seed, "
+               "under P1:LEGACY in seed 1001 (identical thresholds and identical flag vectors, checked)."), "",
               table(["Fitted on", "Detector", "nominal FPR", "flag rate: mean over seeds [across-seed 95 % CI]",
-                     f"flag rate: cohort-bootstrap 95 % CI (seed {first_seed})", "flag"], rows,
-                    "|---|---|---:|---:|---:|---|"), ""]
+                     "flag rate: per-seed min – max", f"flag rate: cohort-bootstrap 95 % CI (seed {first_seed})",
+                     "flag"], rows, "|---|---|---:|---:|---:|---:|---|"), ""]
     parts += ["## Who is flagged (5 % threshold): flag rate (%) by stratum", "",
               ("Strata use EdNet's own-reference features for every row (so P1 and P2 strata are the same "
                "attempts). Quartiles of score, median answer time and fast-answer fraction use cut points from "
@@ -1049,6 +1058,11 @@ def analyze(stages_dir: Path, out_dir: Path, figures: bool = True) -> dict[str, 
         result = review_analysis.protocol_summary(protocol, main)
         summary["protocol"] = result
         write("protocol", review_analysis.md_protocol(result))
+    protocol_prevalence = load("protocol_prevalence")
+    if protocol_prevalence:
+        result = review_analysis.protocol_summary(protocol_prevalence, prevalence, "prevalence.json")
+        summary["protocol_prevalence"] = result
+        write("protocol_prevalence", review_analysis.md_protocol(result, low_prevalence=True))
     if main:
         result = review_analysis.subpopulation_summary(main, protocol)
         summary["subpopulations"] = result

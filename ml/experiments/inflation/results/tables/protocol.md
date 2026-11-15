@@ -4,6 +4,8 @@
 
 Check: the `main protocol` rows reproduce `main.json` (max |Δ recall| = 0.0 over 900 seed × cells).
 
+Share of train-cohort attempts that are cheaters, i.e. presented as normal under (ii) contaminated fitting (mean over seeds): LEGACY 12.05 % (range 11.17–12.39); SIM-FI 12.00 % (range 11.25–12.61); SIM-BL 12.00 % (range 11.25–12.61).
+
 ## Recall, main protocol
 
 | Detector | Subset | LEGACY | SIM-FI | SIM-BL |
@@ -126,3 +128,19 @@ FPR and precision at the validation-frozen 5 % threshold with negatives = all te
 | Rules | LEGACY | 5.0 [4.6, 5.5] | 5.1 [4.4, 5.8] | 65.4 [63.2, 67.5] | 88.4 [86.8, 89.9] | 66.6 [63.4, 69.7] | 73.4 [70.5, 76.4] | 71.9 [68.3, 75.6] | 22.4 [19.0, 26.1] |
 | Rules | SIM-FI | 5.8 [5.1, 6.5] | 6.4 [5.6, 7.1] | 59.7 [57.1, 62.6] | 84.5 [82.8, 86.1] | 52.5 [49.6, 55.3] | 68.3 [64.8, 71.7] | 66.3 [62.8, 69.8] | 15.9 [11.9, 20.3] |
 | Rules | SIM-BL | 5.8 [5.1, 6.5] | 6.4 [5.6, 7.2] | 47.3 [44.6, 50.0] | 76.5 [74.2, 78.9] | 52.9 [48.8, 57.2] | 39.2 [33.4, 45.0] | 56.8 [53.5, 60.0] | 13.6 [10.0, 17.2] |
+
+## H1 contrast on SIM-BL: recall(IF + peers) − recall(Rules), pp, paired by seed
+
+Exact sign-flip permutation p, unadjusted (the pre-specified H1 test is the main-protocol S3/S4 pair with Holm over the 2 slots, `h1.md`; the main-protocol rows here repeat its estimates). H1 decision rule: ≥ 15 pp supported, < 5 pp rules adopted.
+
+| Protocol | Subset | IF + peers recall | Rules recall | gain [95 % CI] | p |
+|---|---|---:|---:|---:|---:|
+| main protocol | S3 collusion↔copy_peer | 61.0 [56.5, 65.4] | 65.5 [60.1, 70.9] | -4.5 [-7.4, -1.2] | 0.0135 |
+| main protocol | S4 score_jump↔proxy | 9.5 [7.8, 11.3] | 10.7 [7.3, 14.2] | -1.2 [-3.8, 1.4] | 0.3900 |
+| main protocol | all | 27.8 [25.8, 29.7] | 36.2 [33.0, 39.3] | -8.3 [-11.0, -5.7] | <0.0001 |
+| (i) label-free threshold | S3 collusion↔copy_peer | 61.9 [57.6, 65.9] | 66.9 [61.7, 72.1] | -5.0 [-8.4, -1.2] | 0.0173 |
+| (i) label-free threshold | S4 score_jump↔proxy | 10.1 [8.4, 11.8] | 11.6 [8.5, 14.8] | -1.4 [-3.6, 0.6] | 0.1982 |
+| (i) label-free threshold | all | 28.6 [26.5, 30.6] | 38.4 [35.1, 41.4] | -9.8 [-12.6, -6.9] | <0.0001 |
+| (ii) contaminated fitting | S3 collusion↔copy_peer | 57.8 [52.9, 62.7] | 36.4 [30.7, 42.6] | 21.4 [15.6, 26.6] | <0.0001 |
+| (ii) contaminated fitting | S4 score_jump↔proxy | 6.4 [4.5, 8.4] | 4.3 [2.5, 6.0] | 2.1 [-0.0, 4.0] | 0.0608 |
+| (ii) contaminated fitting | all | 23.6 [21.6, 25.5] | 20.6 [18.3, 22.9] | 3.0 [0.5, 5.4] | 0.0307 |

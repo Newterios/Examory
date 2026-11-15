@@ -217,6 +217,17 @@ post hoc and exploratory unless they only change how existing results are tested
   both C2ST feature sets. (5) Title "inflates" → "can inflate"; the limitation on the C2ST features is
   corrected to match amendment 4.
 - H. Diagnostic of Rules recall on copy_peer at low prevalence (`tables/prevalence_diagnostic.md`).
+- Follow-up (same day, after review of round 2): (1) the `protocol` table also reports the H1 contrast
+  recall(IF + peers) − recall(Rules) on SIM-BL (S3, S4, all) under each protocol variant, with paired CI and
+  exact sign-flip p (the main-protocol rows repeat `h1.md`), and the share of train-cohort attempts that are
+  cheaters (what contaminated fitting presents as normal); (2) the three protocol variants are repeated at the
+  low prevalence of the `prevalence` stage (`run protocol --anomaly-rate 0.0167 --output
+  results/stages/protocol_prevalence.json`, `tables/protocol_prevalence.md`; its main-protocol rows reproduce
+  `prevalence.json`, checked); (3) `ednet.md` adds the per-seed minimum – maximum of the flag rate next to the
+  across-seed mean, and explains why `quantile_rules` and `quantile_rules_no_peers` coincide on some seeds
+  (EdNet attempts have no synchronous peers, so the peer columns never set the rule score; checked on seed 1001:
+  identical thresholds and identical flag vectors, i.e. not a bug; no number changed). The full (non-compact)
+  copy of a stage written with `--output` is now named after the output file in `stages_full/`.
 
 **Transfer.** Fit (reference + model + threshold) on condition X, apply to test cohorts of Y
 for (LEGACY→SIM-BL), (SIM-FI→SIM-BL), (SIM-BL→SIM-FI), (LEGACY→SIM-FI) and the diagonals;

@@ -8,42 +8,42 @@ EdNet input: `ml/datasets/raw/ednet/derived/ednet_eval.csv` (SHA-256 `0c30a770eb
 
 ## Flag rate on EdNet test cohorts (%)
 
-Two different intervals: the across-seed interval is the 95 % percentile bootstrap of the mean flag rate over the 10 seeds (between-replicate variation); the cohort-bootstrap interval is the within-run 95 % interval (500 resamples of EdNet test cohorts) of seed 1001 only (sampling variation of one deployment).
+Two different intervals: the across-seed interval is the 95 % percentile bootstrap of the mean flag rate over the 10 seeds (between-replicate variation); the cohort-bootstrap interval is the within-run 95 % interval (500 resamples of EdNet test cohorts) of seed 1001 only (sampling variation of one deployment). The per-seed range (minimum – maximum over the seeds) shows the between-replicate spread: the across-seed interval is for the mean and is much narrower than the spread of single runs, so one seed's cohort-bootstrap interval can lie outside it. quantile_rules and quantile_rules_no_peers coincide whenever the threshold is set by a non-peer feature: EdNet attempts have no synchronous peers (all three peer features are 0), so the peer columns never reach the maximum of the rule score; under P2 (EdNet training data, peer features constant) they coincide in every seed, under P1:LEGACY in seed 1001 (identical thresholds and identical flag vectors, checked).
 
-| Fitted on | Detector | nominal FPR | flag rate: mean over seeds [across-seed 95 % CI] | flag rate: cohort-bootstrap 95 % CI (seed 1001) | flag |
-|---|---|---:|---:|---:|---|
-| P2_refit | iforest | 5 % | 5.0 [4.7, 5.3] | [4.1, 5.7] | peer features |
-| P2_refit | iforest | 1 % | 1.0 [0.8, 1.1] | [0.9, 1.8] | peer features |
-| P2_refit | iforest_no_peers | 5 % | 4.9 [4.6, 5.2] | [4.2, 5.8] |  |
-| P2_refit | iforest_no_peers | 1 % | 1.0 [0.9, 1.2] | [0.9, 1.7] |  |
-| P2_refit | quantile_rules | 5 % | 5.2 [4.8, 5.5] | [4.6, 6.1] | peer features |
-| P2_refit | quantile_rules | 1 % | 0.9 [0.8, 1.0] | [0.5, 1.1] | peer features |
-| P2_refit | quantile_rules_no_peers | 5 % | 5.2 [4.8, 5.5] | [4.6, 6.1] |  |
-| P2_refit | quantile_rules_no_peers | 1 % | 0.9 [0.8, 1.0] | [0.5, 1.1] |  |
-| P1:LEGACY | iforest | 5 % | 12.9 [11.5, 14.2] | [8.1, 10.1] | peer features |
-| P1:LEGACY | iforest | 1 % | 4.2 [3.7, 4.8] | [2.0, 3.2] | peer features |
-| P1:LEGACY | iforest_no_peers | 5 % | 31.5 [29.7, 33.6] | [31.5, 35.0] |  |
-| P1:LEGACY | iforest_no_peers | 1 % | 12.7 [10.9, 14.6] | [12.0, 14.4] |  |
-| P1:LEGACY | quantile_rules | 5 % | 35.7 [34.3, 37.2] | [33.6, 37.0] | peer features |
-| P1:LEGACY | quantile_rules | 1 % | 17.8 [13.3, 21.0] | [18.3, 20.9] | peer features |
-| P1:LEGACY | quantile_rules_no_peers | 5 % | 39.1 [37.6, 40.6] | [33.6, 37.0] |  |
-| P1:LEGACY | quantile_rules_no_peers | 1 % | 21.9 [20.0, 23.6] | [18.3, 20.9] |  |
-| P1:SIM-defaults | iforest | 5 % | 27.4 [25.4, 29.2] | [25.6, 28.5] | peer features |
-| P1:SIM-defaults | iforest | 1 % | 9.4 [8.0, 10.8] | [8.9, 11.2] | peer features |
-| P1:SIM-defaults | iforest_no_peers | 5 % | 30.4 [28.5, 32.3] | [29.6, 32.6] |  |
-| P1:SIM-defaults | iforest_no_peers | 1 % | 11.5 [9.7, 13.4] | [13.1, 15.5] |  |
-| P1:SIM-defaults | quantile_rules | 5 % | 36.4 [34.7, 38.0] | [38.7, 42.3] | peer features |
-| P1:SIM-defaults | quantile_rules | 1 % | 21.7 [19.7, 23.7] | [24.7, 27.8] | peer features |
-| P1:SIM-defaults | quantile_rules_no_peers | 5 % | 36.8 [35.1, 38.4] | [39.4, 43.0] |  |
-| P1:SIM-defaults | quantile_rules_no_peers | 1 % | 22.2 [20.7, 23.8] | [24.7, 27.8] |  |
-| P1:SIM-calibrated | iforest | 5 % | 5.3 [4.7, 5.9] | [5.3, 7.0] | peer features |
-| P1:SIM-calibrated | iforest | 1 % | 1.0 [0.7, 1.3] | [1.0, 1.8] | peer features |
-| P1:SIM-calibrated | iforest_no_peers | 5 % | 11.4 [10.6, 12.2] | [12.5, 14.8] |  |
-| P1:SIM-calibrated | iforest_no_peers | 1 % | 3.4 [2.9, 4.0] | [3.2, 4.5] |  |
-| P1:SIM-calibrated | quantile_rules | 5 % | 21.0 [19.8, 22.5] | [24.8, 28.1] | peer features |
-| P1:SIM-calibrated | quantile_rules | 1 % | 9.9 [7.5, 11.5] | [11.0, 13.1] | peer features |
-| P1:SIM-calibrated | quantile_rules_no_peers | 5 % | 22.0 [20.7, 23.6] | [26.4, 29.5] |  |
-| P1:SIM-calibrated | quantile_rules_no_peers | 1 % | 11.7 [10.5, 12.9] | [14.0, 16.3] |  |
+| Fitted on | Detector | nominal FPR | flag rate: mean over seeds [across-seed 95 % CI] | flag rate: per-seed min – max | flag rate: cohort-bootstrap 95 % CI (seed 1001) | flag |
+|---|---|---:|---:|---:|---:|---|
+| P2_refit | iforest | 5 % | 5.0 [4.7, 5.3] | 4.1 – 6.1 | [4.1, 5.7] | peer features |
+| P2_refit | iforest | 1 % | 1.0 [0.8, 1.1] | 0.6 – 1.4 | [0.9, 1.8] | peer features |
+| P2_refit | iforest_no_peers | 5 % | 4.9 [4.6, 5.2] | 4.2 – 6.0 | [4.2, 5.8] |  |
+| P2_refit | iforest_no_peers | 1 % | 1.0 [0.9, 1.2] | 0.7 – 1.4 | [0.9, 1.7] |  |
+| P2_refit | quantile_rules | 5 % | 5.2 [4.8, 5.5] | 4.0 – 5.9 | [4.6, 6.1] | peer features |
+| P2_refit | quantile_rules | 1 % | 0.9 [0.8, 1.0] | 0.5 – 1.2 | [0.5, 1.1] | peer features |
+| P2_refit | quantile_rules_no_peers | 5 % | 5.2 [4.8, 5.5] | 4.0 – 5.9 | [4.6, 6.1] |  |
+| P2_refit | quantile_rules_no_peers | 1 % | 0.9 [0.8, 1.0] | 0.5 – 1.2 | [0.5, 1.1] |  |
+| P1:LEGACY | iforest | 5 % | 12.9 [11.5, 14.2] | 9.1 – 16.7 | [8.1, 10.1] | peer features |
+| P1:LEGACY | iforest | 1 % | 4.2 [3.7, 4.8] | 2.5 – 5.4 | [2.0, 3.2] | peer features |
+| P1:LEGACY | iforest_no_peers | 5 % | 31.5 [29.7, 33.6] | 27.4 – 38.8 | [31.5, 35.0] |  |
+| P1:LEGACY | iforest_no_peers | 1 % | 12.7 [10.9, 14.6] | 7.5 – 17.7 | [12.0, 14.4] |  |
+| P1:LEGACY | quantile_rules | 5 % | 35.7 [34.3, 37.2] | 32.0 – 40.1 | [33.6, 37.0] | peer features |
+| P1:LEGACY | quantile_rules | 1 % | 17.8 [13.3, 21.0] | 0.0 – 23.8 | [18.3, 20.9] | peer features |
+| P1:LEGACY | quantile_rules_no_peers | 5 % | 39.1 [37.6, 40.6] | 35.2 – 43.5 | [33.6, 37.0] |  |
+| P1:LEGACY | quantile_rules_no_peers | 1 % | 21.9 [20.0, 23.6] | 16.9 – 26.3 | [18.3, 20.9] |  |
+| P1:SIM-defaults | iforest | 5 % | 27.4 [25.4, 29.2] | 20.7 – 31.9 | [25.6, 28.5] | peer features |
+| P1:SIM-defaults | iforest | 1 % | 9.4 [8.0, 10.8] | 5.5 – 13.4 | [8.9, 11.2] | peer features |
+| P1:SIM-defaults | iforest_no_peers | 5 % | 30.4 [28.5, 32.3] | 25.3 – 34.1 | [29.6, 32.6] |  |
+| P1:SIM-defaults | iforest_no_peers | 1 % | 11.5 [9.7, 13.4] | 7.0 – 15.8 | [13.1, 15.5] |  |
+| P1:SIM-defaults | quantile_rules | 5 % | 36.4 [34.7, 38.0] | 31.6 – 40.9 | [38.7, 42.3] | peer features |
+| P1:SIM-defaults | quantile_rules | 1 % | 21.7 [19.7, 23.7] | 15.3 – 26.9 | [24.7, 27.8] | peer features |
+| P1:SIM-defaults | quantile_rules_no_peers | 5 % | 36.8 [35.1, 38.4] | 31.6 – 41.1 | [39.4, 43.0] |  |
+| P1:SIM-defaults | quantile_rules_no_peers | 1 % | 22.2 [20.7, 23.8] | 19.7 – 26.9 | [24.7, 27.8] |  |
+| P1:SIM-calibrated | iforest | 5 % | 5.3 [4.7, 5.9] | 3.4 – 7.0 | [5.3, 7.0] | peer features |
+| P1:SIM-calibrated | iforest | 1 % | 1.0 [0.7, 1.3] | 0.4 – 1.6 | [1.0, 1.8] | peer features |
+| P1:SIM-calibrated | iforest_no_peers | 5 % | 11.4 [10.6, 12.2] | 9.6 – 13.7 | [12.5, 14.8] |  |
+| P1:SIM-calibrated | iforest_no_peers | 1 % | 3.4 [2.9, 4.0] | 2.0 – 5.1 | [3.2, 4.5] |  |
+| P1:SIM-calibrated | quantile_rules | 5 % | 21.0 [19.8, 22.5] | 18.3 – 26.4 | [24.8, 28.1] | peer features |
+| P1:SIM-calibrated | quantile_rules | 1 % | 9.9 [7.5, 11.5] | 0.0 – 12.3 | [11.0, 13.1] | peer features |
+| P1:SIM-calibrated | quantile_rules_no_peers | 5 % | 22.0 [20.7, 23.6] | 18.3 – 27.9 | [26.4, 29.5] |  |
+| P1:SIM-calibrated | quantile_rules_no_peers | 1 % | 11.7 [10.5, 12.9] | 8.2 – 15.2 | [14.0, 16.3] |  |
 
 ## Who is flagged (5 % threshold): flag rate (%) by stratum
 

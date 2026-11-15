@@ -346,7 +346,8 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
                         "wall_seconds": time.perf_counter() - started}
     name = f"{args.stage.replace('-', '_')}.json"
     output = Path(args.output) if args.output else STAGES_DIR / name
-    write_json(Path(args.exp_root) / "stages_full" / name, result, compact=True)
+    # the full copy follows the committed file's name (e.g. protocol_prevalence.json)
+    write_json(Path(args.exp_root) / "stages_full" / output.name, result, compact=True)
     write_json(output, slim_stage(result), compact=True)
     print(f"{args.stage}: wrote {relative(output)} in {result['timing']['wall_seconds']:.1f} s", file=sys.stderr)
     return result

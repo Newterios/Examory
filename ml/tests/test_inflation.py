@@ -629,6 +629,14 @@ class ReviewTests(unittest.TestCase):
             self.assertIn("protocol", summary)
             self.assertIn("fi_dose", summary)
             self.assertIn("subpopulations", summary)
+            # H1 contrast of the protocol stage: the main-protocol rows reproduce h1.md's computation
+            h1_rows = {(r["variant"], r["subset"]): r for r in summary["protocol"]["h1"]}
+            self.assertEqual({v for v, _ in h1_rows}, set(review.PROTOCOL_VARIANTS))
+            for row in summary["h1"]["SIM-BL"]["rows"]:
+                ours = h1_rows[("standard", f"slot:{row['slot']}")]
+                self.assertEqual((ours["mean"], ours["low"], ours["high"], ours["p"]),
+                                 (row["test"]["mean"], row["test"]["low"], row["test"]["high"], row["test"]["p"]))
+            self.assertIn("SIM-BL", summary["protocol"]["train_contamination"])
             self.assertTrue((root / "out/figures/F8_fi_dose.png").exists())
             for name in ("protocol.md", "fi_dose.md", "subpopulations.md", "pvalue_changes.md"):
                 self.assertTrue((root / "out/tables" / name).exists(), name)
