@@ -1,11 +1,11 @@
 # Feature injection can inflate the performance of quiz-cheating detectors: evidence from behaviour-level simulation
 
-**Status:** complete draft, 14 Nov 2026; numbers are copied from the generated tables and were cross-checked against them.
+**Status:** revised draft, 15 Nov 2026, after an independent methods review. Numbers are copied from the generated tables in `ml/experiments/inflation/results/tables/`.
 
 **Authors:** Aitbek Kaiyrbekuly¹, [co-authors to be confirmed], Aivar A. Sakhipov¹
 ¹ School of Software Engineering, Astana IT University, Astana, Kazakhstan
 
-**Abstract.** Detectors of cheating in online quizzes are usually evaluated without verified labels, and a common substitute is to inject synthetic anomalies into ordinary attempts. When the injected anomaly is defined in terms of the detector's own features, the evaluation becomes circular; we measure how large this effect is. Three detectors frozen in advance (per-feature quantile rules, an Isolation Forest, and the forest with peer features) are evaluated on a feature-aligned generator, on a behaviour-level simulation and on real unlabelled logs. In the simulation, honest students follow an item-response and response-time model calibrated on EdNet, and cheating is simulated as behaviour (pre-knowledge, answer look-up, peer copying, proxy test-taking); paired counterfactual worlds render the same students and the same cheaters once with feature-aligned injection and once with behaviour-level cheating. At a fixed 5 % false-positive rate, overall recall falls from 46–62 % under injection to 23–36 % under behaviour-level cheating. The loss depends on the cheating type: 54–70 percentage points for look-up with all three detectors, 34–39 points for peer copying with the two peer-aware detectors, 11–26 points for pre-knowledge with the forests and none with the rules, while proxy test-taking is detected near chance in every condition. The large losses persist across wide variation of the assumed mechanism parameters, but their size, and for pre-knowledge even their sign, depends on how intensively students cheat, and detection of copying by peer-aware detectors depends largely on whether a pair submits simultaneously. Detectors without peer features that were fitted on synthetic ordinary behaviour flag 11–39 % of real attempts at a nominal 5 %, and on real data false alerts concentrate on the fastest students and on both ends of the score distribution. The multivariate detector does not outperform transparent rules. We give recommendations for evaluating log-based cheating detectors and release the simulator, calibration and all results.
+**Abstract.** Detectors of cheating in online quizzes are rarely evaluated on verified cases. Positive cases are simulated, injected or labelled by heuristics, and the evaluation becomes circular when their definition shares features with the detector. We study one such construction, feature-aligned injection, with a paired simulation. Three detectors frozen in advance (per-feature quantile rules, an Isolation Forest, and the forest with peer features) are evaluated on the same simulated students twice: with anomalies injected along the detectors' own features, and with cheating simulated as behaviour (pre-knowledge, answer look-up, peer copying, proxy test-taking) on top of an item-response and response-time model calibrated on EdNet. At the injection constants of the platform's original generator and the default mechanism assumptions, recall at a 5 % false-positive rate falls from 46–62 % to 23–36 %, and a gradient-boosting classifier trained on injected labels loses 35 percentage points on behaviour-level cheating. The difference is not a constant. It is 54–70 percentage points for look-up and absent or slightly negative for proxy test-taking, and it changes sign when the injected dose is lowered or the behavioural dose raised. Injected collusion is detected at 99–100 % at every dose because the recipe always satisfies the synchrony condition of the peer features; behaviour-level pairs who submit separately are detected at 36–40 %. The pattern persists under an exam-like revision rate, a fixed closing time and label-free thresholds, but the rules lose about half of their recall when heavily contaminated training data are not purged of cheaters. On real EdNet logs, detectors fitted on synthetic behaviour flag 11–39 % of attempts at a nominal 5 %. We give recommendations for evaluating log-based cheating detectors and release the simulator and all results.
 
 **Keywords:** academic integrity; online assessment; anomaly detection; cheating detection; synthetic data; evaluation methodology; response times; learning analytics
 
@@ -13,262 +13,145 @@
 
 ## 1. Introduction
 
-Online quizzes and examinations leave a detailed trace of how a student worked: when each question was shown, how long the first answer took, whether it was later changed, and when the attempt was submitted. Unsupervised and remote assessment makes misconduct easier, and a substantial share of students report having cheated in online exams [@newton2024howcommon]. A growing body of work therefore proposes to mine these traces for signs of cheating with statistical rules or anomaly detectors [@chandola2009survey; @noorbehbahani2022review; @kaddoura2022review; @trezise2019misconduct; @balderas2020records]. Such detectors are attractive for learning management systems: they need no camera, no lockdown browser and no additional consent beyond what the platform already logs.
+Online quizzes and examinations leave a detailed trace of how a student worked: when each question was shown, how long the first answer took, whether it was later changed, and when the attempt was submitted. Unsupervised and remote assessment makes misconduct easier, and a substantial share of students report having cheated in online exams [@newton2024howcommon]. A growing body of work mines these traces for signs of cheating with statistical rules, anomaly detectors or classifiers [@chandola2009survey; @noorbehbahani2022review; @kaddoura2022review]. Such detectors are attractive for learning management systems because they need no camera, no lockdown browser and no data beyond what the platform already logs.
 
-The weak point of this line of work is evaluation. Verified labels of cheating are almost never available: confirmed cases are rare, confidential, and biased towards what existing procedures already catch. Some studies induce cheating in field experiments under controlled conditions [@ranger2020eexams]. Others derive labels from dedicated algorithms on real platform data [@northcutt2016cameo; @ruiperez2019multiple; @alexandron2024general]. Both kinds of study are costly and remain exceptions. As Alexandron et al. note, in the absence of ground truth most earlier research on cheating detection relied on simulations or indirect measures [@alexandron2024general].
+The weak point of this line of work is evaluation. Verified cases of cheating are rare, confidential, and biased towards what existing procedures already catch. Studies therefore obtain their positive cases in other ways. In a scoping sample of 48 studies from 2015–2026 (Section 2.1, Supplement S3), six evaluated on cheating induced experimentally in real participants and six on cases confirmed or flagged independently of the detector, five of them from one credentialing data set. The others had no labelled positives at all (9), labelled real data with a heuristic or another detector (12), simulated cheating with a psychometric model (12), or altered records by a rule (3).
 
-A common shortcut is therefore to generate the positive class synthetically. Ordinary attempts are produced from some distribution, and "cheating" attempts are produced by perturbing them: answers become faster, the score jumps, two students receive the same answers at the same time. Kamalov et al., for example, evaluate an outlier detector for exam scores on synthetic datasets in which cheating is defined as a jump of the final score above the student's earlier average, the same quantity the detector examines [@kamalov2021cheating]. A recent Moodle plug-in is likewise evaluated on synthetic benchmarks representing forms of dishonesty [@shatnawi2025moodle].
+Several of these constructions share one risk. When the positive cases are defined through quantities that the detector itself measures, or are generated by the model family on which the detector is built, the evaluation partly measures the agreement between the construction and the detector. In test security this has been said plainly: Belov and Toton call validation on simulated aberrance biased, because the same assumptions about the aberrance enter the detector and the simulated data [@belov2022realdata], and Gorney and Wollack show that the choice of generating model changes the measured power of pre-knowledge detectors [@gorney2022generating]. Benchmark studies in outlier detection, intrusion detection and time-series anomaly detection report the same dependence on how anomalies are built [@emmott2013benchmarks; @mchugh2000testing; @wu2023benchmarks].
 
-We call this practice **feature-aligned injection**: the anomaly is defined directly in terms of the quantities that the detector measures. Its danger is circularity. If "rapid responding" is injected by shortening response times, a detector that thresholds response times will find it. The reported recall then describes the agreement between the generator and the detector, not the ability to find students who actually cheated.
+For log-based detectors in learning platforms the size of this effect has not been examined under controlled conditions. We examine it for the construction in which the circularity is most direct, and which the platform that motivated this study used itself. We call it **feature-aligned injection**: ordinary attempts are perturbed along the detector's features, so that answers become faster, answers are changed more often, two students receive the same answers at the same moment, or the score jumps. Real misconduct is a behaviour with a mechanism, and its footprint in the log is a by-product of that mechanism. The footprint may be weak, may be spread over several features, and may even have the opposite sign to the injected one: looking an answer up makes a student slower, not faster.
 
-Real misconduct is a behaviour with a mechanism: copying from a peer, looking an answer up, knowing leaked items in advance, letting someone else sit the test. Its footprint in the log is a by-product of that mechanism. The footprint may be weak, may be spread across several features, and may depend on the ability of the student (a strong student who copies changes little). It may even have the opposite sign to the one assumed by the injection: looking an answer up makes a student slower, not faster.
+We take three detectors that were designed and frozen before the experiment and evaluate the identical code on **paired counterfactual worlds**. The same simulated students, honest attempts and cheaters are rendered once with feature-aligned injection and once with cheating simulated as behaviour. The paired design removes differences in the population. It does not remove the choice of how strongly students cheat, which both constructions must make, so we vary the dose of both. The paper addresses three questions:
 
-Related fields have documented the same problem under other names:
-- benchmark construction determines what outlier detectors appear to achieve [@emmott2013benchmarks; @campos2016evaluation; @steinbuss2021benchmarking];
-- laboratory-only evaluation and inappropriate threat models inflate results in security [@arp2022dos];
-- leakage between the construction of the data and the model is a recurring cause of irreproducible machine-learning claims [@kapoor2023leakage; @hand2006illusion].
+1. How much does the measured performance of the same detectors differ between feature-aligned injection and behaviour-level cheating at the constants actually in use?
+2. On what does this difference depend: the dose of either construction, the assumed mechanism parameters, the evaluation protocol, and the model of honest behaviour?
+3. How do detectors developed on synthetic ordinary behaviour behave on real ordinary logs?
 
-For log-based cheating detection the size of this effect has not been measured. This paper measures it. We take three detectors that were designed and frozen before the experiment:
-- per-feature quantile rules;
-- an Isolation Forest [@liu2008isolation] on attempt-level features;
-- the same forest extended with peer features (synchronous submission and answer agreement).
-
-We then evaluate the identical code three times:
-
-1. on a **feature-aligned generator**, in which four anomaly types are injected along the detector's own features;
-2. on a **behaviour-level simulation**. Honest students follow a latent learner model (ability, speed, disengagement and revision propensity), with item response theory for correctness and a lognormal model for response times [@vanderlinden2006lognormal; @vanderlinden2007hierarchical], calibrated on real interaction logs. Cheating is simulated as actions: pre-knowledge of leaked items, answer look-up, copying from a peer with a communication delay, and a proxy test-taker. Features are computed afterwards by the unchanged production pipeline;
-3. on **real logs** from the EdNet dataset [@choi2020ednet]. These contain no cheating labels and are used to estimate how often ordinary behaviour is flagged.
-
-The simulation is built as a set of *paired counterfactual worlds*. The same simulated students, the same honest attempts and the same set of cheaters are rendered once with feature-aligned injection and once with behaviour-level cheating. The difference in detector performance between the two worlds is therefore attributable to the way the anomalies are produced and to nothing else.
-
-**Contributions.**
-
-- We define feature-aligned injection as an evaluation pitfall for log-based cheating detectors. We separate two sources of optimism: unrealistic ordinary behaviour, and anomalies aligned with detector features.
-- We provide an open behaviour-level simulator of quiz attempts with four cheating mechanisms. It is calibrated on public data and emits events in the same contract as a production LMS. With it comes the paired-world design that isolates the effect of the injection mechanism.
-- For three frozen detectors, plus three additional unsupervised detectors as a robustness check, we quantify the difference in recall and partial AUC at a fixed false-positive budget and report precision. This includes transfer of thresholds between evaluation regimes, dose–response curves over cheating intensity, and a sensitivity analysis over the assumed mechanism parameters.
-- We report the flag rate of the same detectors on real unlabelled behaviour and show which ordinary students are flagged.
-- All code, parameters, seeds and result files are released so that every table and figure can be regenerated.
+The contributions are an open behaviour-level simulator of quiz attempts with four cheating mechanisms, calibrated on public data and emitting events in the contract of a production platform; the paired comparison with its dose, sensitivity and protocol analyses for unsupervised detectors, a supervised classifier and two classical indices; and false-positive estimates on real logs. All code, parameters, seeds and result files are released.
 
 The detectors studied here produce risk signals for review by a teacher. None of the results should be read as evidence that statistical flags can establish misconduct.
 
 ## 2. Related work
 
-### 2.1 Cheating in online assessment and its detection from logs
+### 2.1 Where the positive cases come from
 
-Newton and Essex synthesise self-report surveys and find that 44.7 % of students admitted to cheating in online exams: 29.9 % before and 54.7 % during the COVID-19 pandemic. Individual cheating was more common than group cheating, and most samples make under-reporting likely [@newton2024howcommon]. Comparisons of proctored and unproctored online tests point in the same direction: scores are higher and time use differs when tests are unproctored [@alessio2017proctoring; @dendir2020proctoring; @bilen2021online]. Reviews of the field describe a wide range of prevention and detection approaches, from proctoring to analysis of answers and activity logs [@noorbehbahani2022review; @kaddoura2022review; @holden2021integrity].
+Self-report surveys suggest that cheating in online exams is common [@newton2024howcommon], and comparisons of proctored and unproctored tests point the same way [@alessio2017proctoring; @dendir2020proctoring; @bilen2021online]. Reviews describe a wide range of detection approaches [@noorbehbahani2022review; @kaddoura2022review; @holden2021integrity].
 
-Log-based detection in learning platforms has mostly been validated where labels could be derived from the platform itself. In MOOCs, "multiple-account" copying means harvesting correct answers with one account and submitting them with another. It leaves a characteristic signature that dedicated algorithms can label [@northcutt2016cameo; @alexandron2017copying; @ruiperez2019multiple]. Alexandron et al. use such labels to validate a general anomaly-based method across cheating types and courses [@alexandron2024general]. Case studies in university courses analyse learning records and writing behaviour around specific assessments [@balderas2020records; @trezise2019misconduct]. Where neither labels nor experiments are available, evaluation falls back on synthetic positives [@kamalov2021cheating; @shatnawi2025moodle].
+To see how detectors based on log or response data are evaluated, we coded 48 peer-reviewed studies from 2015–2026 by the provenance of their positive cases (Supplement S3; a non-systematic scoping sample by a single coder, so the counts describe the sample and not the literature). The two research traditions differ:
 
-### 2.2 Psychometric detection of test fraud
+- **Machine learning and learning analytics (23 studies).** Nine have no labelled positives and describe or inspect the flagged cases, as in the work on multiple-account cheating in MOOCs [@northcutt2016cameo; @alexandron2017copying]. Ten label real data with a heuristic rule or with the output of another detector [@ruiperez2019multiple; @alexandron2024general; @tiong2024integrity]. Two inject synthetic cases [@kamalov2021cheating; @shatnawi2025moodle], and two rest on experimentally induced or independently confirmed cheating.
+- **Psychometric test security (25 studies).** Twelve simulate cheating with a psychometric model, often the model family of the detector [@sinharay2017statistic; @belov2016preknowledge]. Five use experimentally induced cheating [@ranger2020eexams; @toton2019preknowledge; @diedenhofen2017pagefocus], and five use one credentialing data set with examinees flagged by the testing company [@man2019datamining; @zopluoglu2019xgboost], whose flags came partly from statistical analysis [@belov2022realdata].
 
-Educational measurement has a long tradition of statistical indices for specific forms of fraud:
-- answer-copying statistics that compare the agreement of two examinees with what their abilities predict [@wollack1997copying; @sotaridona2002kindex];
-- response-time models that flag responses faster than expected for an item and a person [@vanderlinden2003aberrant; @vanderlinden2008bayesian; @vanderlinden2015checks];
-- methods for item pre-knowledge based on scores, response times or both [@qian2016preknowledge; @sinharay2017preknowledge; @sinharay2020rt; @zimmermann2016local; @eckerly2017preknowledge].
+In the 15 studies with injected or heuristically labelled positives, the definition of a positive overlaps with the detector's inputs in five, partly in four, not in three, and is unclear in three. All three injection studies overlap: positives are final scores raised above the earlier average for a detector that flags scores above a prediction from those earlier scores [@kamalov2021cheating], injected pairs that share answers for a detector of answer similarity [@shatnawi2025moodle], and response times shifted down on compromised items for a statistic that tests for faster times on those items [@sinharay2020rt]. Some authors avoid the overlap deliberately, for example by removing from the inputs the times that defined the label [@erdem2025cheating]. Feature-aligned injection in the strict sense is thus uncommon in this sample; labels and simulations that share assumptions with the detector are not.
 
-The handbook edited by Cizek and Wollack surveys these methods and stresses that their power depends on how much of the test is affected and on how the fraud is carried out [@cizek2017handbook]. Machine-learning approaches have been applied to the same problem on real credentialing data with flagged examinees [@man2019datamining; @zopluoglu2019xgboost].
+### 2.2 Psychometric indices and field experiments
 
-The study closest to ours in spirit is the field experiment of Ranger, Schmidt and Wolgast [@ranger2020eexams]. They induced cheating in a 20-item computer-based mock exam: some students received notes with answers, and others practised on items that later appeared in the exam. According to that paper, at a 5 % false-positive rate response-time indicators detected roughly 40–60 % of students with pre-knowledge, and none of the indicators detected the milder form of collusion. A classification tree over 18 indicators reached a sensitivity of 0.42. These figures come from behaviourally induced cheating and are well below the detection rates reported on injected anomalies; Kamalov et al. report, for example, a true-positive rate of about 95 % on synthetic score jumps [@kamalov2021cheating]. The gap motivates a systematic comparison of the two ways of constructing positives.
+Educational measurement has a long tradition of indices for specific forms of fraud: person-fit statistics [@drasgow1985appropriateness; @meijer2001personfit; @karabatsos2003personfit]; answer-copying statistics that compare the agreement of two examinees with what is expected [@frary1977indices; @wollack1997copying; @sotaridona2002kindex; @vanderlinden2006copying; @vanderlinden2015checks]; response-time models for aberrant speed and for collusion [@vanderlinden2003aberrant; @vanderlinden2008bayesian; @vanderlinden2009collusion; @marianti2014aberrant]; and methods for item pre-knowledge [@qian2016preknowledge; @sinharay2017preknowledge; @sinharay2020rt; @sinharay2020scores; @belov2016preknowledge; @kasli2023gated; @eckerly2017preknowledge]. The handbook edited by Cizek and Wollack stresses that their power depends on how much of the test is affected and on how the fraud is carried out [@cizek2017handbook].
 
-This literature also supplies the building blocks of our simulator:
-- the hierarchical model of speed and accuracy [@vanderlinden2007hierarchical];
-- the lognormal model of response times [@vanderlinden2006lognormal];
-- rapid-guessing behaviour of disengaged but honest examinees [@wise2005rte; @wise2017rapid];
-- the empirical regularities of answer changing, in which most changes go from wrong to right [@benjamin1984staying; @vanderlinden2012changes].
+Two field experiments are the closest external anchors for our simulation. Ranger, Schmidt and Wolgast induced cheating in a 20-item computer-based mock exam [@ranger2020eexams]. Students with pre-knowledge had practised eight of the twenty items; at a false-positive rate of 5 % response-time indicators detected about 60 % and 40 % of them in the two cohorts. In the collusion conditions students received a note during the exam. When the note held the correct answers to all questions, these students revised 6.58 answers on average against 0.84 for regular examinees, and revision indicators detected over 80 % of them. When the note held a peer's partly incorrect answers, revisions averaged 3.93 and none of the indicators detected the condition. A classification tree over twelve of the eighteen indicators reached a sensitivity of 0.42. Toton and Maynes disclosed 12 of 25 items to randomly assigned examinees and used response times to detect them [@toton2019preknowledge]. These experiments show two things that matter below: detection rates on induced cheating are moderate, and students who receive answers during a test do revise many of them.
 
-### 2.3 Evaluation of anomaly detectors on synthetic data
+The same literature supplies the building blocks of our simulator: the hierarchical model of speed and accuracy and the lognormal model of response times [@vanderlinden2006lognormal; @vanderlinden2007hierarchical], rapid guessing by disengaged but honest examinees [@wise2005rte; @wise2017rapid], and the regularities of answer changing [@benjamin1984staying; @vanderlinden2012changes].
 
-How anomalies are constructed is known to drive benchmark conclusions in unsupervised outlier detection:
-- Emmott et al. construct benchmarks from real data while controlling point difficulty, relative frequency, clusteredness and feature irrelevance. They show that these properties, not the algorithm alone, determine measured performance [@emmott2013benchmarks].
-- Campos et al. and Goldstein and Uchida document the sensitivity of rankings to datasets and measures [@campos2016evaluation; @goldstein2016comparative].
-- Steinbuss and Böhm propose to reconstruct regular instances from real data and to generate outliers with explicit characteristics [@steinbuss2021benchmarking].
-- ADBench compares detectors across types of synthetic anomalies and finds that no method dominates across them [@han2022adbench].
+### 2.3 Synthetic evaluation data in other fields
 
-Methodological work in neighbouring areas reaches similar conclusions. It lists laboratory-only evaluation and threat models that do not match deployment among the common pitfalls [@arp2022dos], and identifies leakage between data construction and modelling as a cause of over-optimistic results [@kapoor2023leakage]. Hand argues that apparent progress in classifier technology often reflects the idealised conditions of the evaluation rather than performance on the real problem; the argument applies directly [@hand2006illusion].
+How anomalies are constructed is known to drive benchmark conclusions in unsupervised outlier detection [@emmott2013benchmarks; @campos2016evaluation; @goldstein2016comparative; @steinbuss2021benchmarking; @han2022adbench]. The closest precedent is intrusion detection: the DARPA evaluations were criticised for an unvalidated synthetic background [@mchugh2000testing], artefacts of the simulation were found that made attacks detectable for reasons unrelated to the attacks [@mahoney2003darpa], and Sommer and Paxson argued that results obtained in such closed worlds do not transfer to operation [@sommer2010outside]. Similar points have been made for time-series anomaly benchmarks [@wu2023benchmarks], for security research in general [@arp2022dos], for leakage between data construction and modelling [@kapoor2023leakage; @hand2006illusion], and for the base-rate problem that makes even small false-positive rates costly [@axelsson2000baserate].
 
-What is missing is a measurement for cheating detection in assessment logs. Here the anomalies of interest are intentional behaviours with known mechanisms, and false positives carry a high cost for the individual student. Our study fills this gap by holding fixed the detectors, the cohort structure, the honest population and the set of cheaters, and varying only how the cheating attempts are produced.
+In learning analytics, synthetic data generators have been proposed as shared references [@berg2016synthetic], and a review of simulated learners found that evidence of validity is often missing and proposed a Turing-like test for simulated data [@kaser2024simulated]. Guidance on simulation studies asks for explicit aims, data-generating mechanisms, estimands and Monte Carlo errors [@morris2019simulation] and warns that design choices made after seeing results can favour any method [@pawel2024pitfalls]. We follow this guidance where we can and mark every analysis that was added after results were seen.
 
 ## 3. Materials and methods
 
-### 3.1 Overview of the design
+### 3.1 Design
 
-The experiment holds the detectors fixed and varies the evaluation data. Three **conditions** are compared:
+The experiment holds the detectors fixed and varies the evaluation data (Table 1).
+
+**Table 1.** Conditions.
 
 | Condition | Ordinary behaviour | How cheating attempts are produced |
 |---|---|---|
-| LEGACY | ad hoc distributions of the original generator | feature-aligned injection |
-| SIM-FI | latent learner model calibrated on EdNet | feature-aligned injection (same recipes) |
+| LEGACY | ad hoc distributions of the platform's original generator | feature-aligned injection |
+| SIM-FI | latent learner model calibrated on EdNet | the same injection recipes |
 | SIM-BL | latent learner model calibrated on EdNet | behaviour-level mechanisms |
 
-SIM-FI and SIM-BL are two renderings of the *same simulated world*: the same students, items, honest attempts, cohort structure and set of cheaters. Two contrasts follow:
-- SIM-FI − SIM-BL isolates the effect of the injection mechanism;
-- LEGACY − SIM-FI reflects the realism of ordinary behaviour.
+SIM-FI and SIM-BL are two renderings of the same simulated world: the same students, items, honest attempts, cohorts and set of cheaters. The quantity of interest is the difference in a detector's recall between them at the same false-positive rate. This difference depends on how strongly cheaters cheat under each construction. The primary analysis evaluates it at the constants of the original generator and at default mechanism parameters; further analyses vary both. LEGACY differs from SIM-FI in the ordinary behaviour and in details of the recipes (Supplement S2), so that contrast is descriptive. A fourth data source, real EdNet logs without labels, is used to measure flag rates on ordinary behaviour.
 
-A fourth data source, real EdNet logs without labels, is used to measure flag rates on ordinary behaviour and to quantify how far each synthetic source is from real data.
+All conditions share the assessment format of the original generator: cohorts of 20 students, a 20-item four-option multiple-choice quiz, three attempts per student on consecutive days on the same form, and cheating only on the final attempt. In the main experiment 12 % of all attempts (36 % of final attempts) are cheating attempts, split 35/25/25/15 % over four types. This prevalence is high; a separate analysis uses 5 % of final attempts. Each replicate has 2,000 students (100 cohorts, 6,000 attempts), and 20 replicates (seeds 1001–1020) are generated per condition unless stated otherwise.
 
-All conditions share the assessment format of the original generator:
-- cohorts of 20 students;
-- a 20-item four-option multiple-choice quiz;
-- three attempts per student on consecutive days;
-- cheating only on the final attempt.
+### 3.2 Detectors and protocol
 
-In the main experiment 12 % of all attempts (36 % of final attempts) are cheating attempts, split 35/25/25/15 % over four types. A separate analysis uses a prevalence of 5 % of final attempts. Each replicate has 2,000 students (100 cohorts, 6,000 attempts). Twenty independent replicates (seeds 1001–1020) are generated per condition for the main, transfer, robustness and prevalence analyses; Section 3.6 lists the replicate count of every other analysis.
+The detectors are those of the Examory platform as tagged at its first project milestone (23 Oct 2026), before the behaviour-level simulator existed. Their code was not modified for this study.
 
-### 3.2 Detectors (frozen)
-
-The detectors are those of the Examory platform as tagged at its first project milestone (tag `pre-defense-1`, 23 Oct 2026), before the behaviour-level simulator existed. The code under `ml/anomaly/` was not modified for this study, and its file hashes are recorded with every result.
-
-Each quiz attempt is described by twelve attempt-level features computed from `quiz.answered` and `quiz.submitted` events:
-- mean, median, 10th percentile and variance of first-answer times;
-- the fraction of answers faster than the item's 10th-percentile time among ordinary training attempts (items with fewer than 30 training observations use the global 10th percentile);
-- the time since display of the final answer to the last-answered question;
-- attempt duration;
-- number and fraction of answer changes;
-- percentage score;
-- the standardised difference between the score and the student's earlier attempts;
-- an indicator of missing history.
-
-Three **peer features** are computed against other students of the same cohort, quiz and variant who submitted within ±5 s:
-- the number of such synchronous submissions;
-- the maximum fraction of identical final answers;
-- the same agreement weighted by the rarity of the shared answers.
-
-Time, count and rarity features are log-transformed. Every feature has a missing-value indicator, so the forest without peer features sees 24 columns and the other two detectors see 30.
+Each attempt is described by twelve attempt-level features computed from answer and submission events: four summaries of first-answer times, the fraction of answers faster than the item's 10th-percentile time among ordinary training attempts, the time taken for the final answer to the last-answered question, the attempt duration, the number and fraction of answer changes, the percentage score, the standardised difference between the score and the student's earlier attempts, and an indicator of missing history. Three peer features are computed against other students of the same cohort and quiz who submitted within ±5 s: the number of such submissions, the maximum fraction of identical final answers, and the same agreement weighted by the rarity of the shared answers. Supplement S2 gives the definitions.
 
 Three detectors are evaluated:
 
-- **Rules** (`quantile_rules`): the score of an attempt is its most extreme two-sided mid-rank over all features with respect to ordinary training attempts;
-- **IF** (`iforest_no_peers`): an Isolation Forest [@liu2008isolation] with 200 trees on the twelve attempt-level features;
-- **IF + peers** (`iforest`): the same forest on all fifteen features.
+- **Rules:** the score of an attempt is its most extreme two-sided mid-rank over all fifteen features with respect to ordinary training attempts;
+- **IF:** an Isolation Forest [@liu2008isolation] with 200 trees on the twelve attempt-level features;
+- **IF + peers:** the same forest on all fifteen features. Both forests use scikit-learn [@pedregosa2011sklearn].
 
-Both forests use the scikit-learn implementation [@pedregosa2011sklearn].
-
-The protocol is as follows:
-- Cohorts are split 60/20/20 into training, validation and test sets, so that no student or cohort appears in two parts.
-- References and models are fitted on ordinary attempts of the training cohorts.
-- The alert threshold is chosen on the validation cohorts as the point of maximum recall subject to a false-positive rate (FPR) of at most 5 % (and, separately, 1 %), and is then frozen. The threshold choice uses the validation labels of the same condition, so it is an oracle operating point for that condition.
-- All reported metrics are computed on the test cohorts.
-
-As a robustness check, three further unsupervised detectors are run under the identical protocol on the same feature matrix, standardised and with constant columns removed: the local outlier factor [@breunig2000lof], a one-class support vector machine [@scholkopf2001support] and a robust Mahalanobis distance (minimum covariance determinant), all from scikit-learn.
+Cohorts are split 60/20/20 into training, validation and test sets. References and models are fitted on the ordinary attempts of the training cohorts. The alert threshold is the point of maximum recall on the validation cohorts subject to a false-positive rate (FPR) of at most 5 %, and is then frozen; all metrics are computed on the test cohorts. This protocol contains two oracles, which later analyses remove: the threshold uses validation labels, and the training data are purged of cheating attempts using their labels.
 
 ### 3.3 Feature-aligned injection
 
-The original generator draws ordinary attempts from three response-time profiles (lognormal, medians 18–38 s), a Beta-distributed probability of a correct answer and a per-profile probability of changing an answer. Four anomaly types are then injected on final attempts, each along one family of detector features:
+Four anomaly types are injected on final attempts, each along one family of detector features:
 
 - **rapid response:** each answer is, with probability 0.65, made faster by a factor drawn from U(0.18, 0.55);
-- **excessive changes:** each question receives, with a probability drawn from U(0.45, 0.75), a sequence of one to four answer changes that replaces its own revisions. The events are spread evenly over the original first-answer time, so the first answer moves earlier and first-answer times also shorten;
-- **collusion:** two students of a cohort receive a common answer pattern (30 % of items forced to the same wrong option, the rest copied with probability 0.90), response times identical up to ±3 %, start times within 8 s and submissions within 1 s of each other;
+- **excessive changes:** each question receives, with a probability drawn from U(0.45, 0.75), one to four answer changes spread over its original first-answer time, so first-answer times also shorten;
+- **collusion:** two students of a cohort receive a common answer pattern (30 % of items forced to the same wrong option, the rest copied with probability 0.90), nearly identical response times, and submissions within 1 s of each other;
 - **score jump:** the probability of a correct answer is raised by U(0.18, 0.32).
 
-In SIM-FI the same four recipes, with the same constants, are applied to the honest attempts of the simulated students. The port differs from the original in four details:
-- the forced collusion option is the item's least attractive distractor;
-- collusion durations are the leader's honest item times;
-- the score jump shifts the item-response probability of a correct first answer (capped at 0.98) and keeps the number of changes and all timings at their honest values;
-- rapid response scales every event time within an affected item.
+In SIM-FI the same recipes with the same constants are applied to the honest attempts of the simulated students. An injection dose λ multiplies the per-item probabilities and the score shift; λ = 1 is the original recipe. The forced-wrong items and the synchronous submission of the collusion recipe are not scaled.
 
 ### 3.4 Behaviour-level simulation
 
-**Honest behaviour.** A student *i* has ability θ_i ~ N(0, 1), speed τ_i (correlated with ability), a disengagement propensity g_i and a revision propensity r_i. Ability changes by a person-specific practice gain between attempts. An item *j* has discrimination a_j, difficulty b_j, a common pseudo-guessing parameter c, time intensity β_j, time dispersion σ_j and unequally attractive distractors. A response is generated as follows:
-- With probability g_i it is a rapid guess: a short lognormal time and a uniformly random option [@wise2005rte; @wise2017rapid].
-- Otherwise the student knows the answer with probability logistic(a_j(θ_i − b_j)) and, if not, guesses correctly with probability c, which yields the three-parameter logistic model. A wrong answer is drawn according to the distractor weights.
-- The response time follows the lognormal model log T_ij = β_j − τ_i + σ_j ε [@vanderlinden2006lognormal; @vanderlinden2007hierarchical].
-- After the first answer the student may change it. The probability is higher after a wrong first answer, and a change from a wrong answer leads to the correct one with a calibrated probability [@benjamin1984staying; @vanderlinden2012changes].
-- Navigation is linear, with a lognormal gap between items and a final pause before submission.
+**Honest behaviour.** A student has an ability, a speed correlated with ability, a disengagement propensity and a revision propensity. Items have a discrimination, a difficulty, a common guessing parameter, a time intensity and unequally attractive distractors. With the student's disengagement probability a response is a rapid guess [@wise2005rte]. Otherwise correctness follows the three-parameter logistic model and the response time a lognormal model [@vanderlinden2006lognormal; @vanderlinden2007hierarchical]. After the first answer the student may change it, more often after a wrong answer [@benjamin1984staying; @vanderlinden2012changes]. Navigation is linear.
 
-**Calibration.** All parameters of the honest model are estimated from EdNet-KT2 [@choi2020ednet], the action-level log of a TOEIC tutoring service, restricted to Part 5 (four-option, single-question items without audio). Users are split by a hash of their identifier into a calibration half and an evaluation half; only the calibration half is used here. The estimates are obtained as follows:
-- **Item and person parameters:** joint maximum-a-posteriori estimation of the three-parameter model on non-rapid first answers, with a parametric-bootstrap correction of the incidental-parameter bias. The common *c* = 0.125 was selected by profile posterior, but that fit had not converged at the iteration limit, and a parametric replicate selected *c* = 0.10.
-- **Response-time parameters:** a two-way lognormal fit.
-- **Rapid guessing:** the normative threshold of 10 % of an item's mean time, capped at 10 s.
-- **Person-level propensities:** beta-binomial maximum likelihood, which separates between-person variation from sampling noise.
-- **Practice gain:** weakly identified (mean 0.07, 95 % CI [−0.01, 0.17]; 600 pairs of consecutive windows).
+**Calibration.** All parameters of the honest model are estimated from EdNet-KT2 [@choi2020ednet], the action-level log of a TOEIC tutoring service, restricted to four-option single-question items (Part 5). Users are split by a hash of their identifier into a calibration half and an evaluation half. Supplement S1 gives the estimation procedure, the estimates with confidence intervals and posterior-predictive checks. The model reproduces pooled first-answer times well. It is too dispersed within attempts, too narrow in attempt duration, about one score point too low, and too light in the tail of the change count: simulated attempts contain 4.5 answer changes on average, real ones 6.7.
 
-Items with discrimination below 0.25 or |b| > 4, whose difficulty is not identified, are excluded from the simulator's item pool (91 of 1,180). The calibration report states that this rule was fixed before any detector was run on calibrated data.
+**Cheating mechanisms.** Cheating is simulated as actions on top of the honest attempt of the same student, re-using the student's latent draws, so that an attempt changes only where the mechanism acts. Mechanism parameters cannot be estimated from data. They are assumed values (Supplement S2) and are varied in the sensitivity analysis.
 
-Table S1 lists the estimates with confidence intervals and posterior-predictive diagnostics on held-out calibration users. The model reproduces pooled first-answer times well, but it remains:
-- too dispersed within attempts;
-- too narrow in attempt duration;
-- about one point too low in score;
-- too light in the tail of the change count.
+- **Pre-knowledge** (in the slot of *rapid response*). Each item is leaked with probability 0.65 and a leaked item is recalled with probability 0.92, in which case the answer is correct. Half of the cheaters are *naive* and answer recalled items in a fraction U(0.25, 0.60) of their ordinary time; the others *disguise* their timing.
+- **Look-up** (in the slot of *excessive changes*). On an item the student does not know, an external resource is consulted with probability 0.70; this takes a lognormal time (median 35 s) and returns the correct answer with probability 0.90. Half of the cheaters enter their own answer first and correct it afterwards; the others answer only after the look-up.
+- **Peer copying** (in the slot of *collusion*). Two students of a cohort form a pair, and the abler one is usually the source. The copier starts shortly after the source and copies each item with probability 0.80, but only after the source has answered it and a relay delay has passed. The source pauses briefly after each copied item. With probability 0.50 the pair submits together, within about 2 s.
+- **Proxy test-taker** (in the slot of *score jump*). The final attempt is taken by a different, abler person with their own speed and revision behaviour.
 
-Section 4.9 reports how closely simulated attempts reproduce real attempts of the evaluation half.
+An intensity x replaces the per-item coverage or propensity of the first three mechanisms and scales the ability gain of the proxy.
 
-**Cheating mechanisms.** Cheating is simulated as actions on top of the honest attempt of the same student. The mechanism re-uses the student's latent draws (common random numbers), so an attempt changes only where the mechanism acts. Mechanism parameters are not available from data. They are set to documented priors (Table S2, Appendix) and varied in the sensitivity analysis (Section 3.6).
+Two of these mechanisms contain the injected assumption as a sub-case. A naive pre-knowledge cheater is close to the rapid-response recipe with correct answers added, and a pair that submits together satisfies the synchrony that the collusion recipe always imposes. Results for these two slots therefore depend directly on the assumed shares of naive cheaters and of synchronous pairs, and we report both sub-populations separately. Synchronous submission was added after a single-replicate pilot in which 9 of 90 pairs submitted within the 5 s window of the peer features; the amendment makes peer copying easier to detect.
 
-- **Pre-knowledge** (paired with *rapid response*). Each item is leaked with probability 0.65, and a leaked item is recalled with probability 0.92, in which case the answer is correct. Each cheater is *naive* with probability 0.5 and answers recalled items in a fraction U(0.25, 0.60) of their ordinary time. The others *disguise* their timing and answer at their ordinary pace.
-- **Look-up** (paired with *excessive changes*). On an item that the student does not know and does not rapid-guess, an external resource is consulted with probability 0.70. The look-up takes a lognormal time (median 35 s) and returns the correct answer with probability 0.90. Half of the cheaters, in expectation, enter their own answer first and correct it after the look-up (a change event if the answers differ). The others answer only after the look-up.
-- **Peer copying** (paired with *collusion*). Two students of a cohort form a pair, and the abler one is the source with probability 0.80. The protocol is:
-  - the copier starts shortly after the source (median lag 15 s) and copies each item with probability 0.80;
-  - the copied answer becomes available only after the source has answered that item plus a relay delay (median 6 s), so the copier waits when ahead and answers quickly when behind;
-  - the source answers honestly but pauses for a communication overhead (median 3 s) after each item the copier copies;
-  - later changes by the source are followed with probability 0.50;
-  - with probability 0.50 the pair submits together: the earlier finisher delays submission to within a lognormal offset (median about 2 s) of the later one. Under this distribution about one synchronised pair in ten still differs by more than 5 s. Otherwise each submits when finished.
-- **Proxy test-taker** (paired with *score jump*). The final attempt is taken by a different, abler person. That person's ability is drawn from N(1.2, 0.5²), truncated to at least 0.5 above the student's own, with speed drawn conditional on that ability, a fresh revision propensity, and no rapid guessing.
-
-The pairing of mechanisms with injected types follows what each injected type is commonly meant to represent, and cheaters keep the same type slot in SIM-FI and SIM-BL. Synchronised submission was added to peer copying after a single-seed pilot on uncalibrated parameters. In that pilot only 9 of 90 pairs submitted within the 5 s window of the peer features, so the features were almost never evaluated. The amendment makes peer copying *easier* to detect. Its share of 50 % is an assumption, and pooled peer-copying results depend on it; we therefore report both kinds of pairs separately (Sections 4.3 and 4.5).
-
-**Implementation.** The simulator is a dependency-free Go program. Every random quantity is drawn from its own stream keyed by a hash of the seed and of the entity it belongs to. As a result, attempts not touched by cheating are byte-identical in the honest, SIM-FI and SIM-BL logs. The simulator writes events in the platform's event contract, and the unchanged production feature pipeline computes all features. A per-attempt ground-truth file records the latent variables, the mechanism, the role in a pair and the affected items.
+**Implementation.** The simulator is a dependency-free Go program. Every random quantity is drawn from its own stream keyed by the seed and the entity it belongs to, so attempts not touched by cheating are byte-identical across the three logs. Events are written in the platform's event contract and all features are computed by the unchanged production pipeline. A ground-truth file records the mechanism, the role in a pair and the number of affected items.
 
 ### 3.5 Real data
 
-The evaluation half of EdNet-KT2 is converted into the same event contract. A *pseudo-attempt* is a run of 20 consecutive Part-5 questions answered in one sitting (every gap at most 5 min), with at most five pseudo-attempts per user. Repeated exposures to a question, review sessions and re-solved bookmarked questions are excluded. This yields 23,042 attempts of 10,671 users, grouped into 534 pseudo-cohorts of 20 users.
+The evaluation half of EdNet-KT2 is converted into the same event contract. A pseudo-attempt is a run of 20 consecutive Part-5 questions answered in one sitting. This yields 23,042 attempts of 10,671 users, grouped into 534 pseudo-cohorts of about 20 users. Cohorts are artificial, so peer features carry no meaning on these data. The service is an ungraded self-study tutor; we assume that cheating is negligible there and read the share of flagged attempts as a false-positive rate.
 
-These users are the 7.2 % of evaluation users with Part-5 activity (10,671 of 147,756) who produced at least one such sitting, so they are the more persistent learners. First-answer times, answer changes and scores are real. Cohorts are artificial, so peer features carry no meaning on these data and are reported only for completeness. The service is an ungraded self-study tutor; we assume that cheating is negligible there and interpret the share of flagged attempts as a false-positive rate.
+Two protocols are used. In *transfer*, a detector and its threshold are fitted on synthetic ordinary attempts (the original generator, or the honest simulator world with item sets drawn per attempt as in EdNet) and applied unchanged to real attempts. In *refit*, the detector and its threshold are fitted on real cohorts. Because the frozen rules include peer features, a peer-free variant of the rules was built by the evaluation harness for these data. Realism of the synthetic sources is quantified by a classifier two-sample test [@lopezpaz2017c2st]: a gradient-boosting classifier is trained to distinguish real from synthetic ordinary attempts, with cross-validation grouped by user.
 
-Two protocols are used:
-- **Transfer.** A detector and its threshold are fitted on synthetic ordinary attempts and applied unchanged to real attempts. The synthetic source is either LEGACY or the honest simulator world, with item sets drawn per attempt as in EdNet. The LEGACY threshold is chosen with LEGACY validation labels, as in the main protocol. The simulator threshold is chosen on honest validation attempts only, at 5 % of them.
-- **Refit.** The detector is fitted and its threshold set on real training and validation cohorts, and the flag rate on real test cohorts is broken down by strata of ordinary students.
+### 3.6 Analyses and statistics
 
-Because the frozen rules include peer features, a peer-free variant is added for the real data: the frozen quantile-rule scoring function applied to the twelve attempt-level features. This variant was built by the evaluation harness and is not part of the frozen pipeline.
+**Primary analysis.** The primary outcome is the difference in recall at the frozen 5 % threshold between SIM-FI and SIM-BL, per detector and type, with replicates paired by seed. The plan stored with the code fixed this outcome, the Holm correction over the twelve detector-by-type tests [@holm1979simple], and the decision rule of the platform's hypothesis H1 before the multi-replicate runs; the repository history does not date these steps independently of the results.
 
-Realism of the synthetic sources is quantified by a classifier two-sample test [@lopezpaz2017c2st]. A gradient-boosting classifier (scikit-learn) is trained to distinguish real from synthetic ordinary attempts on the behavioural features, with cross-validation grouped by user. An area under the ROC curve (AUC) of 0.5 means the two are indistinguishable. Per-feature Kolmogorov–Smirnov statistics and standardised Wasserstein distances complement it.
+**Further analyses.** The following were specified before the calibrated run: transfer of detectors between conditions, behavioural dose–response, low prevalence, the manipulation check, three further unsupervised detectors, and the real-data analysis. The following were added after the main results had been seen, most of them in response to an independent review of the draft, and are exploratory:
 
-### 3.6 Analysis plan
+- the injection dose λ crossed with the behavioural intensity x (10 replicates);
+- a sensitivity analysis over ten mechanism and four injection parameters (60 Latin-hypercube configurations with pairwise rank correlations of at most 0.10, 10 replicates each), which replaced an earlier version with three replicates per configuration;
+- protocol variants: a label-free threshold (95th percentile of validation ordinary scores) and fitting on training data from which cheaters were not removed;
+- variants of honest behaviour: an exam-like revision rate (0.84 changes per attempt, as reported for regular examinees by Ranger et al.), item sets drawn per attempt, and a fixed closing time at which unfinished attempts are submitted automatically;
+- a supervised classifier (gradient boosting with default settings) trained on the labels of one world and tested on both;
+- two classical indices under the same protocol: an answer-similarity statistic (standardised number of identical answers of two students, also restricted to incorrect answers) and the response-time person-fit statistic of Marianti et al. [@marianti2014aberrant].
 
-The plan is stored with the code (`ml/experiments/inflation/README.md`). The primary endpoint, tests, corrections and the H1 rule were fixed before the multi-seed runs. Secondary analyses were added after the uncalibrated run and before the calibrated rerun: the manipulation check, the non-sync subset, the C2ST feature set and the strata. The amendment log is in the same README. The repository history does not independently date these steps, because plan, simulator, calibration and results were committed together.
+The amendment log in the repository lists every change with its date.
 
-**Metrics.** For every detector, condition and replicate we compute:
-- recall, precision and realised FPR at the validation-frozen 5 % threshold;
-- the standardised partial AUC for FPR ≤ 0.05 [@mcclish1989partial];
-- ROC AUC and average precision.
-
-Metrics are reported for all test attempts and for each cheating type against all ordinary test attempts.
-
-**Inflation.** The primary outcome is the difference in recall at the frozen 5 % threshold between SIM-FI and SIM-BL, per detector and type. Replicates are paired by seed; we report the mean difference with a paired bootstrap 95 % confidence interval and a Wilcoxon signed-rank test [@wilcoxon1945individual; @efron1993bootstrap]. LEGACY − SIM-BL is reported with unpaired tests. *p*-values are adjusted by the Holm procedure within each family of twelve detector-by-type tests [@holm1979simple].
-
-**Hypothesis H1.** The platform's verification plan states that the forest with peer features should exceed the rules in recall by at least 15 percentage points at FPR ≤ 5 % on collusion-type and score-jump-type cheating. If the gain is below 5 points, the rules are adopted. The plan names two data sources: the detector-independent simulated evaluation set and real anonymised quiz logs. Here the hypothesis is tested on SIM-BL, with Holm adjustment over the two types.
-
-**Secondary analyses.**
-- (i) *Transfer between conditions:* a detector validated on one condition is applied to the test cohorts of another (20 replicates).
-- (ii) *Dose–response:* SIM-BL is regenerated with the intensity of every mechanism set to 0.1, 0.25, 0.5, 0.75 and 1.0 (10 replicates, seeds 1001–1010). For pre-knowledge, look-up and peer copying the intensity replaces the per-item coverage or propensity. For the proxy it scales the ability gain. The share of synchronously submitting pairs is not changed.
-- (iii) *Sensitivity:* forty configurations of ten mechanism parameters are drawn by Latin hypercube sampling over wide ranges (Table S2), three replicates each (seeds 1001–1003), and the inflation is recomputed for each. Spearman correlations between parameters and inflation are exploratory and uncorrected.
-- (iv) *Prevalence:* the main protocol at 5 % of final attempts (20 replicates).
-- (v) *Manipulation check:* paired differences between each cheating attempt and the same student's honest attempt in score, duration, answer changes and median answer time.
-- (vi) *Real data:* 10 replicates (seeds 1001–1010), which vary the cohort split and the synthetic training data.
-
-**Reproducibility.** Simulation, calibration and analysis are deterministic given the seeds. Simulator output is byte-identical on the same platform; floating-point rounding can differ across CPU architectures. Every result file records:
-- the code revision;
-- the hashes of the frozen detector code, of the harness, of all parameter files and of the input data;
-- the library versions.
+**Statistics.** Values are means over replicates with percentile-bootstrap 95 % intervals over replicates [@efron1993bootstrap]. These intervals quantify Monte Carlo error under fixed code and parameters. They do not express the sampling uncertainty of a single study, in which per-type recall rests on 22–50 cheaters and has a median within-replicate interval of 13–43 pp where recall is not at its ceiling, nor the uncertainty about mechanism parameters. Paired differences are tested with an exact sign-flip permutation test; with 20 replicates every non-trivial difference becomes significant, so we emphasise effect sizes. "pp" denotes percentage points and "points" score points out of 20.
 
 ## 4. Results
 
-All tables in this section are copied from the generated files in `ml/experiments/inflation/results/tables/`. Values are means over replicates with 95 % bootstrap confidence intervals over replicates. The replicate count is 20 for Sections 4.1–4.4 and 4.6–4.8, 10 for dose–response and real data, and 3 per configuration for the sensitivity analysis. Simulator parameters are the EdNet-calibrated ones. The same experiment with uncalibrated default parameters is summarised at the end of Section 4.2 and listed in full in the supplementary material.
-
 ### 4.1 What the manipulations change
 
-Table 1 compares each cheating attempt with the honest attempt of the same simulated student.
+Table 2 compares each cheating attempt with the honest attempt of the same simulated student. The injections move one quantity strongly. Excessive changes adds about 27 change events to a 20-item attempt and, because the events are spread over the original answer time, shortens the median first-answer time as much as rapid response does. The behaviour-level mechanisms move several quantities moderately, and not always in the direction the corresponding injection assumes: looking answers up raises the score by 4.5 points, makes the attempt 262 s longer and adds less than one change event. Of the injected score jumps, 2.3 % leave the event stream unchanged and 7.7 % leave the score unchanged; they are counted as positives.
 
-The four injected types differ in how many quantities they move:
-- *Rapid response* removes about 200 s of working time without changing the score.
-- *Score jump* adds about three points and leaves timing and changes untouched.
-- *Excessive changes* adds about 27 answer-change events to a 20-item attempt. Because the injected events are spread over the original answer time, it also shortens the median first-answer time by about 10 s, as much as rapid response does.
-- *Collusion* lowers the score by 3.6 points and removes about four changes.
+**Table 2.** Manipulation check: mean difference between a cheating attempt and the same student's honest attempt.
 
-The behaviour-level mechanisms move several quantities moderately, and not always in the direction the corresponding injection assumes. Looking answers up raises the score by 4.5 points but makes the attempt 262 s *longer* and adds less than one change event. Peer copying changes the average score by only 0.6 points. This average covers sources, whose answers are unchanged, and copiers, whose gain depends on the ability difference within the pair.
-
-**Table 1.** Manipulation check: mean difference between a cheating attempt and the same student's honest attempt.
-
-| World | Type | Δ score (points of 20) | Δ duration (s) | Δ answer changes | Δ median first-answer time (s) |
+| World | Type | Δ score (points) | Δ duration (s) | Δ answer changes | Δ median first-answer time (s) |
 |---|---|---:|---:|---:|---:|
 | SIM-FI | rapid response | 0.00 | −199.8 | 0.00 | −9.80 |
 | SIM-FI | excessive changes | 0.00 | −14.6 | +27.35 | −9.98 |
@@ -279,212 +162,143 @@ The behaviour-level mechanisms move several quantities moderately, and not alway
 | SIM-BL | peer copying | +0.56 | +64.6 | −1.31 | −1.42 |
 | SIM-BL | proxy | +2.91 | −54.5 | −0.89 | −2.14 |
 
-### 4.2 Detector performance under the three conditions
+### 4.2 Detector performance at the default constants
 
-The realised false-positive rate over all test attempts is close to the nominal 5 % in every condition (4.2–5.3 %), so differences in recall are not an artefact of different operating points. Recall is given in Table 2 and Figure 1. Figure 2 shows the ROC curves for FPR ≤ 10 %.
+The realised FPR on test attempts is 4.2–5.3 % in every condition. Table 3 and Figure 1 give recall.
+
+**Table 3.** Recall (%) at the validation-frozen 5 % FPR threshold, and the paired difference SIM-FI − SIM-BL in pp (20 replicates; exact sign-flip test, Holm-adjusted over the twelve per-type tests).
+
+| Detector | Type (injected ↔ behavioural) | LEGACY | SIM-FI | SIM-BL | Δ [95 % CI] | p (Holm) |
+|---|---|---:|---:|---:|---:|---:|
+| Rules | all | 68.6 | 61.9 | 36.2 | 25.8 [23.0, 28.6] | |
+| Rules | rapid response ↔ pre-knowledge | 49.7 | 34.1 | 34.3 | −0.2 [−6.1, 5.3] | 1.00 |
+| Rules | excessive changes ↔ look-up | 99.0 | 97.8 | 28.0 | 69.8 [64.9, 74.6] | < 0.0001 |
+| Rules | collusion ↔ peer copying | 100.0 | 100.0 | 65.5 | 34.5 [29.1, 39.9] | < 0.0001 |
+| Rules | score jump ↔ proxy | 14.0 | 12.3 | 10.7 | 1.6 [−3.3, 6.9] | 1.00 |
+| IF | all | 40.6 | 46.3 | 22.9 | 23.4 [21.0, 25.8] | |
+| IF | rapid response ↔ pre-knowledge | 57.9 | 55.6 | 29.8 | 25.7 [23.0, 28.4] | < 0.0001 |
+| IF | excessive changes ↔ look-up | 74.1 | 91.1 | 23.2 | 67.9 [64.7, 71.0] | < 0.0001 |
+| IF | collusion ↔ peer copying | 1.4 | 11.0 | 21.5 | −10.5 [−14.3, −6.7] | 0.0003 |
+| IF | score jump ↔ proxy | 6.3 | 5.6 | 8.3 | −2.7 [−5.5, 0.1] | 0.24 |
+| IF + peers | all | 48.6 | 53.6 | 27.8 | 25.8 [23.9, 27.7] | |
+| IF + peers | rapid response ↔ pre-knowledge | 38.6 | 35.4 | 24.2 | 11.2 [8.0, 14.7] | < 0.0001 |
+| IF + peers | excessive changes ↔ look-up | 50.0 | 68.0 | 14.4 | 53.6 [48.8, 58.3] | < 0.0001 |
+| IF + peers | collusion ↔ peer copying | 88.8 | 100.0 | 61.0 | 39.0 [34.6, 43.5] | < 0.0001 |
+| IF + peers | score jump ↔ proxy | 6.6 | 5.1 | 9.5 | −4.4 [−6.6, −2.2] | 0.007 |
 
 ![Figure 1](../../ml/experiments/inflation/results/figures/F1_recall_by_slot.png)
 
-**Figure 1.** Recall at the validation-frozen 5 % FPR threshold by cheating type, detector and condition (mean over 20 replicates with 95 % bootstrap interval).
+**Figure 1.** Recall at the validation-frozen 5 % FPR threshold by cheating type, detector and condition (mean over 20 replicates with 95 % interval over replicates).
 
-![Figure 2](../../ml/experiments/inflation/results/figures/F2_roc_zoom.png)
+Over all cheating attempts each detector loses 23–26 pp of recall when injection is replaced by behaviour-level cheating at the default constants. The standardised partial AUC for FPR ≤ 0.05 [@mcclish1989partial] falls from 0.758 to 0.616 for the rules, from 0.656 to 0.555 for IF and from 0.700 to 0.589 for IF + peers. The per-type picture is uneven:
 
-**Figure 2.** ROC curves restricted to FPR ≤ 10 % for all cheating attempts and for each type, by condition and detector (mean over replicates with 2.5–97.5 % band; grey line: chance).
+- **Look-up.** All three detectors lose 54–70 pp.
+- **Peer copying.** The two detectors that use peer features lose 35 and 39 pp. IF, which has no peer features, detects behaviour-level copying *better* than injected collusion (21.5 % against 11.0 %); the detected attempts are copiers (40.8 %), not sources (2.2 %), and the reversal does not occur with uncalibrated parameters (Supplement S4).
+- **Pre-knowledge.** The forests lose 11 and 26 pp; the rules show no difference (−0.2 pp, interval ±6).
+- **Proxy.** No detector reaches 15 % recall in any condition. On the simulated students the rules detect it weakly, with a ROC AUC of 0.64 under injection and 0.62 under proxy test-taking, and the forests are close to chance (0.52–0.55). For IF + peers the difference is small and negative.
 
-**Table 2.** Recall (%) at the validation-frozen 5 % FPR threshold.
+Relative to the original generator the picture is similar, with one addition: the rules lose 15.4 pp [9.8, 20.8] on pre-knowledge when LEGACY is compared with SIM-BL. The original generator and its port to simulated students thus disagree for this cell, which shows that the result also depends on the ordinary behaviour into which anomalies are injected.
 
-| Detector | Cheating type (injected ↔ behavioural) | LEGACY | SIM-FI | SIM-BL |
-|---|---|---:|---:|---:|
-| Rules | all | 68.6 [66.8, 70.4] | 61.9 [59.8, 64.0] | 36.2 [33.0, 39.3] |
-| Rules | rapid response ↔ pre-knowledge | 49.7 [46.1, 53.2] | 34.1 [29.9, 38.2] | 34.3 [29.9, 38.6] |
-| Rules | excessive changes ↔ look-up | 99.0 [98.5, 99.6] | 97.8 [96.7, 98.8] | 28.0 [23.1, 33.0] |
-| Rules | collusion ↔ peer copying | 100.0 [100.0, 100.0] | 100.0 [100.0, 100.0] | 65.5 [60.1, 70.9] |
-| Rules | score jump ↔ proxy | 14.0 [10.5, 17.6] | 12.3 [8.2, 17.4] | 10.7 [7.3, 14.2] |
-| IF | all | 40.6 [38.2, 42.9] | 46.3 [43.9, 48.5] | 22.9 [21.0, 24.9] |
-| IF | rapid response ↔ pre-knowledge | 57.9 [54.0, 61.8] | 55.6 [52.5, 58.5] | 29.8 [27.4, 32.3] |
-| IF | excessive changes ↔ look-up | 74.1 [70.7, 77.4] | 91.1 [88.9, 93.2] | 23.2 [20.7, 26.0] |
-| IF | collusion ↔ peer copying | 1.4 [0.5, 2.4] | 11.0 [7.7, 14.5] | 21.5 [18.7, 24.3] |
-| IF | score jump ↔ proxy | 6.3 [4.4, 8.3] | 5.6 [3.6, 8.1] | 8.3 [5.8, 11.1] |
-| IF + peers | all | 48.6 [46.7, 50.5] | 53.6 [51.9, 55.3] | 27.8 [25.8, 29.7] |
-| IF + peers | rapid response ↔ pre-knowledge | 38.6 [35.0, 42.1] | 35.4 [32.5, 38.4] | 24.2 [22.1, 26.4] |
-| IF + peers | excessive changes ↔ look-up | 50.0 [46.6, 53.4] | 68.0 [63.5, 72.4] | 14.4 [11.7, 17.2] |
-| IF + peers | collusion ↔ peer copying | 88.8 [84.9, 92.5] | 100.0 [100.0, 100.0] | 61.0 [56.5, 65.4] |
-| IF + peers | score jump ↔ proxy | 6.6 [4.1, 9.1] | 5.1 [3.1, 7.2] | 9.5 [7.8, 11.3] |
+### 4.3 The difference depends on the dose of both constructions
 
-SIM-BL recall on peer copying pools pairs that submit together and pairs that do not, so it depends on the assumed 50 % share of synchronously submitting pairs (Section 4.3).
+The values in Table 3 hold for one injected dose and one behavioural intensity. Figure 2 crosses four injection doses with five behavioural intensities.
 
-Over all cheating attempts, recall under behaviour-level cheating is between 0.49 and 0.58 of what the same detector achieves under feature-aligned injection on the same simulated students:
-- rules: 36.2 % against 61.9 %;
-- forest: 22.9 % against 46.3 %;
-- forest with peer features: 27.8 % against 53.6 %.
+![Figure 2](../../ml/experiments/inflation/results/figures/F8_fi_dose.png)
 
-The standardised partial AUC for FPR ≤ 0.05 shows the same pattern independently of the threshold (0.5 is chance): 0.758 → 0.616 for the rules, 0.656 → 0.555 for the forest and 0.700 → 0.589 for the forest with peer features.
+**Figure 2.** Recall difference SIM-FI(λ) − SIM-BL(x) in pp, by detector (rows) and type (columns), for injection dose λ and behavioural intensity x (10 replicates; column "default" is the main configuration; black line: zero difference; ° marks cells whose 95 % interval includes zero).
 
-**Table 3.** Difference in recall at the frozen 5 % threshold, SIM-FI − SIM-BL, in percentage points, paired by replicate (n = 20; Wilcoxon signed-rank; Holm-adjusted over the twelve tests).
+For pre-knowledge and look-up the difference changes sign inside the grid. At the default behavioural intensity, the rules' difference on look-up is 68 pp at λ = 1, 51 pp at λ = 0.75, 12 pp at λ = 0.5 and −18 pp at λ = 0.25, where the injection touches three items instead of twelve. In the other direction, when every item is leaked (x = 1) the rules detect 86.6 % of behaviour-level cheaters against 33.2 % of injected rapid responders. The absence of a difference for the rules on pre-knowledge in Table 3 is therefore a property of the default coverage of 0.65.
 
-| Detector | Cheating type | Δ recall, pp [95 % CI] | p (Holm) |
-|---|---|---:|---:|
-| Rules | rapid response ↔ pre-knowledge | −0.2 [−6.1, 5.3] | 1.000 |
-| Rules | excessive changes ↔ look-up | 69.8 [64.9, 74.6] | < 0.0001 |
-| Rules | collusion ↔ peer copying | 34.5 [29.1, 39.9] | < 0.0001 |
-| Rules | score jump ↔ proxy | 1.6 [−3.3, 6.9] | 1.000 |
-| IF | rapid response ↔ pre-knowledge | 25.7 [23.0, 28.4] | < 0.0001 |
-| IF | excessive changes ↔ look-up | 67.9 [64.7, 71.0] | 0.0008 |
-| IF | collusion ↔ peer copying | −10.5 [−14.3, −6.7] | 0.0016 |
-| IF | score jump ↔ proxy | −2.7 [−5.5, 0.1] | 0.358 |
-| IF + peers | rapid response ↔ pre-knowledge | 11.2 [8.0, 14.7] | 0.0008 |
-| IF + peers | excessive changes ↔ look-up | 53.6 [48.8, 58.3] | 0.0008 |
-| IF + peers | collusion ↔ peer copying | 39.0 [34.6, 43.5] | 0.0008 |
-| IF + peers | score jump ↔ proxy | −4.4 [−6.6, −2.2] | 0.017 |
+The peer-copying slot behaves differently. Injected collusion is detected by the two peer-aware detectors at 99–100 % at every dose, because the dose scales only the share of copied answers while the six forced-wrong items and the submission within 1 s remain. The difference to behaviour-level copying therefore depends on the behavioural side alone: 87 pp for the rules when one item in ten is copied and 29 pp when all are.
 
-The difference is large in some cells, absent in others, and reversed in two:
+A single injected magnitude can thus be optimistic or pessimistic. What the comparison at default constants shows is that the recipes as they were actually used overstate the detection of look-up and of peer copying by a wide margin.
 
-- *Excessive changes ↔ look-up.* All three detectors lose 54–70 points. The injection adds about 27 change events and also shortens first-answer times (Table 1). Look-up produces a slower, more accurate attempt with less than one extra change.
-- *Collusion ↔ peer copying.* The two detectors that use peer features lose 34.5 (rules) and 39.0 points (forest with peer features).
+**Sensitivity to assumed parameters.** Across 60 joint configurations of ten mechanism and four injection parameters (Figure 3), the difference is positive in 98–100 % of configurations for look-up (medians 40–59 pp) and in 92–93 % for peer copying with the peer-aware detectors (medians 40–41 pp). For pre-knowledge it is positive in 42 % of configurations for the rules (median −6 pp), 72 % for IF and 63 % for IF + peers. For IF on peer copying it is negative in every configuration, and for proxy it stays within ±13 pp. Partial rank correlations (exploratory, 336 uncorrected tests) attribute the pre-knowledge difference mainly to the injected per-item probability (0.97–0.98) and the share of naive cheaters (−0.81 to −0.94), the look-up difference to the injected change probability and to the propensity and duration of look-ups, and the peer-copying difference to the share of synchronous pairs (−0.88), the copied share and the injected submission window.
 
-  The forest *without* peer features shows the opposite: it detects 21.5 % of behavioural copiers and sources but only 11.0 % of injected colluders. This difference comes from copiers (40.8 %), not sources (2.2 %; Table 4). A plausible explanation is that copying disturbs the copier's timing (waiting for the source, then answering quickly), whereas the injection gives both students the leader's ordinary item times. We did not run feature attribution, and the reversal does not occur with uncalibrated parameters (see below).
-- *Rapid response ↔ pre-knowledge.* The forests lose 11–26 points; the rules lose nothing. Pre-knowledge raises the score and, for naive cheaters, shortens response times. The rules detect 41.0 % of naive and 28.4 % of disguising cheaters, whereas the forests detect 9.3–10.8 % of disguising cheaters (supplementary breakdown table).
-- *Score jump ↔ proxy.* None of the three main detectors exceeds 14 % recall in any condition (standardised partial AUC 0.50–0.53), which is close to chance at a realised FPR of about 5 %. Both the injected and the proxy attempts gain about three points (Table 1), which these detectors do not separate from ordinary variation. For the forest with peer features the difference is small and negative (−4.4 points).
+![Figure 3](../../ml/experiments/inflation/results/figures/F5_sensitivity.png)
 
-Compared with the original generator (LEGACY − SIM-BL, unpaired), the losses are:
-- on excessive changes ↔ look-up: 71.0, 50.9 and 35.5 points (rules, forest, forest with peer features);
-- on collusion ↔ peer copying, for the detectors with peer features: 34.5 and 27.8 points (all Holm-adjusted *p* < 0.0001).
+**Figure 3.** Recall difference SIM-FI − SIM-BL across 60 Latin-hypercube configurations of mechanism and injection parameters, by type and detector (one point per configuration, mean of 10 replicates; boxes: quartiles; star: default configuration with 95 % interval; dashed line: 10 pp).
 
-**Results with uncalibrated parameters.** With the simulator's default parameters (`results_defaults/`), the main conclusions hold:
-- large losses on look-up (66.5–76.4 points) and on peer copying for the peer-aware detectors (45.2 and 48.0 points);
-- losses of 16.3 and 26.9 points for the forests on pre-knowledge;
-- none for the rules on pre-knowledge (−0.7);
-- the same H1 verdict.
+### 4.4 Which cheaters are detected
 
-Several results differ:
-- The forest without peer features detects copying no better behaviourally than under injection: 3.6 % against 7.0 %, a difference of +3.4 [0.8, 5.8], Holm-adjusted *p* = 0.11, instead of −10.5. It also detects copiers and sources equally rarely (3.7 % and 3.5 %), and LEGACY − SIM-BL for this detector and type is −2.2 (*p* = 0.21) instead of −20.1. The reversal reported above is therefore specific to the calibrated parameters.
-- On proxy, the difference for the forest with peer features is −1.7 [−4.9, 1.5] and not significant, and for the rules −4.0 [−8.1, 0.3] instead of +1.6.
-- Pairs that do not submit together are detected less often (rules 22.1 %, forest with peer features 19.3 %, against 39.8 % and 36.1 %).
-- Overall SIM-BL recall is lower (32.6, 13.4 and 22.1 %).
-- A detector validated on LEGACY flags 13.9–27.2 % of ordinary simulated attempts instead of 21.7–27.6 %.
+Table 4 separates the sub-populations that the mechanisms create.
 
-### 4.3 Collusion: the role of synchronous submission
+**Table 4.** Recall (%) on behaviour-level cheating by sub-population, at the frozen 5 % threshold. The last two columns are the classical indices of Section 4.6.
 
-The peer features compare a student only with peers who submit within ±5 s. The injection makes both members of a pair submit within 1 s, so the window condition is always satisfied. In the behavioural simulation half of the pairs, by assumption, submit together and half do not. Table 4 separates the two groups.
+| Sub-population | Rules | IF | IF + peers | Answer similarity (incorrect answers) | RT person-fit |
+|---|---:|---:|---:|---:|---:|
+| Pre-knowledge, naive | 41.0 | 51.7 | 38.6 | | 16.9 |
+| Pre-knowledge, disguising | 28.4 | 9.3 | 10.8 | | 2.0 |
+| Peer copying, pair submits together | 92.0 | 21.5 | 86.0 | 52.6 | 44.5 |
+| Peer copying, pair submits separately | 39.8 | 22.1 | 36.1 | 47.9 | 43.2 |
+| Peer copying, copier | 69.3 | 40.8 | 71.3 | | |
+| Peer copying, source | 61.7 | 2.2 | 50.7 | | |
+| Injected collusion (SIM-FI), for reference | 100.0 | 11.0 | 100.0 | 99.9 | 6.2 |
 
-**Table 4.** Recall (%) on peer copying in SIM-BL by pair behaviour and role, at the frozen 5 % threshold. The pooled rows (copier, source) depend on the assumed 50 % share of synchronously submitting pairs.
+Pairs that submit together are detected by the peer-aware detectors almost as reliably as injected collusion; pairs that do not are detected at 36–40 %. For these detectors, performance on "collusion" measures mostly whether colluding students submit within the 5 s window that the peer features require, a condition the injection always satisfies. The forests detect disguising pre-knowledge cheaters at about 10 %, the rules at 28 %. Sources of copied answers are invisible to attempt-level features.
 
-| Group | Rules | IF | IF + peers |
+### 4.5 Robustness to the protocol and to the model of honest behaviour
+
+Table 5 repeats the main comparison under variants of the protocol and of honest behaviour.
+
+**Table 5.** Recall difference SIM-FI − SIM-BL over all cheating attempts, in pp [95 % CI], under variants of the evaluation (20 replicates each).
+
+| Variant | Rules | IF | IF + peers |
 |---|---:|---:|---:|
-| Pair submits together | 92.0 | 21.5 | 86.0 |
-| Pair submits separately | 39.8 | 22.1 | 36.1 |
-| Copier | 69.3 | 40.8 | 71.3 |
-| Source | 61.7 | 2.2 | 50.7 |
-| Injected collusion (SIM-FI), for reference | 100.0 | 11.0 | 100.0 |
+| Main protocol | 25.8 [23.0, 28.6] | 23.4 [21.0, 25.8] | 25.8 [23.9, 27.7] |
+| Label-free threshold | 24.6 [21.9, 27.4] | 22.9 [20.6, 25.1] | 25.7 [23.8, 27.6] |
+| Training data not purged of cheaters | 5.5 [2.9, 8.2] | 20.5 [18.7, 22.3] | 22.8 [20.6, 25.0] |
+| Exam-like revision rate | 20.8 [17.6, 24.1] | 20.4 [18.0, 22.8] | 26.3 [23.4, 28.9] |
+| Item sets drawn per attempt | 35.9 [32.8, 38.8] | 23.3 [20.7, 26.0] | 28.1 [26.2, 30.2] |
+| Closing time, 5 % of ordinary attempts cut off | 23.8 [21.0, 26.7] | 22.9 [20.4, 25.5] | 24.8 [22.4, 27.2] |
+| Closing time, 16 % of ordinary attempts cut off | 25.8 [23.4, 28.2] | 23.4 [21.0, 25.9] | 24.1 [22.2, 26.1] |
 
-Pairs that submit together are detected almost as reliably as injected collusion. Pairs that do not are detected at 36–40 %, a loss relative to the injection of:
-- 60.2 [52.4, 67.9] points for the rules;
-- 63.9 [57.1, 70.5] points for the forest with peer features.
+A threshold set without labels changes nothing of substance. The variants of honest behaviour change individual cells but not the pattern. With an exam-like revision rate, behaviour-level look-up becomes easier to detect (rules 44.1 % instead of 28.0 %, IF 46.9 % instead of 23.2 %) because the few changes it adds stand out against a quiet baseline; the difference to the injection remains 52–59 pp. With the earlier of the two closing times, which cuts off 16 % of ordinary attempts, 32 % of ordinary attempts have a synchronous peer instead of 17 %, and IF + peers detects synchronous pairs less often (64.0 % instead of 86.0 %), while the rules are less affected (84.7 % instead of 92.0 %).
 
-For the detectors with peer features, the reported performance on "collusion" therefore measures mostly whether colluding students submit within the 5 s window that the peer features require. The injection always satisfies this condition. The forest without peer features is unaffected by synchronous submission (21.5 % against 22.1 %). Sources are not detected by attempt-level features (2.2 %, below the false-positive rate), although they pause after each copied item.
+Purging matters far more. When the cheaters of the training cohorts stay in the data from which references and models are fitted, the forests lose 4–10 pp, but the rules collapse in both worlds: from 61.9 % to 26.1 % under injection and from 36.2 % to 20.6 % under behaviour-level cheating. Injected anomalies are extreme and homogeneous, so they move the reference quantiles on which the rules depend, and most of the rules' advantage under injection disappears. This is a consequence of heavy contamination: in the main experiment 12 % of the training attempts are cheating attempts. At the low prevalence of Section 4.7 (1.6 %), fitting without purging changes the rules' recall little (55.0 % to 55.2 % under injection, 32.3 % to 28.5 % under behaviour-level cheating) and leaves the difference between the worlds as large as before (26.7 pp).
 
-### 4.4 Transfer between evaluation regimes
+**Hypothesis H1.** The platform's verification plan stated that IF + peers should exceed the rules in recall by at least 15 pp on collusion-type and score-jump-type cheating, and that the rules would be adopted if the gain was below 5 pp. Under the main protocol the gain on behaviour-level data is −4.5 pp [−7.4, −1.2] on peer copying and −1.2 pp [−3.8, 1.4] on proxy test-taking, so H1 is not supported. The verdict depends on purging at the high prevalence of the main experiment. Without purging, when 12 % of the training attempts are cheating attempts, IF + peers detects 57.8 % of peer copying and the rules 36.4 %, a gain of 21.4 pp [15.6, 26.6] that would meet the criterion for that type (2.1 pp on proxy). At the low prevalence, when 1.6 % of the training attempts are cheating attempts, the rules stay ahead with purging (gain −16.6 pp [−25.9, −7.6] on peer copying) and without it (−5.2 pp [−14.5, 4.6]); on peer copying the rules go from 82.5 % to 73.3 % and IF + peers from 65.9 % to 68.1 %. The rules are adopted for the platform on this basis, with the test on real logs still pending.
 
-A detector whose threshold was validated on one condition was applied to the test cohorts of another (Table 5, Figure 3). Between the two simulated worlds, which share their ordinary attempts, the false-positive rate is preserved and only recall changes. A detector developed on the original generator and applied to the simulated students flags 22–28 % of ordinary attempts at a nominal 5 %: its notion of normal behaviour does not match the calibrated population.
+### 4.6 Supervised and classical detectors
 
-**Table 5.** Realised FPR (%) / recall on all cheating attempts (%) when a detector validated on condition X is applied to condition Y.
+**Supervised classifier.** A gradient-boosting classifier on the same fifteen features answers two questions that unsupervised detectors cannot (Table 6, Figure 4). First, a classifier trained and thresholded on injected labels loses 34.8 pp [32.6, 36.9] of recall when it meets behaviour-level cheating, 69.9 pp on look-up. The inflation is therefore not specific to unsupervised detection. Second, when the classifier is trained on behaviour-level labels it detects 69.6 % of behaviour-level cheating, 33.5 pp [30.8, 36.2] more than the best of the three frozen detectors, and 75–77 % of pre-knowledge, look-up and peer copying. The features do carry the signal of these mechanisms; the unsupervised detectors do not find it, and a classifier trained on injected labels finds less than half of it for look-up (29.1 % against 75.6 %). The transfer fails in the other direction as well.
 
-| X → Y | Rules | IF | IF + peers |
+**Table 6.** Recall (%) of a gradient-boosting classifier at the 5 % FPR threshold of its training world (20 replicates; realised FPR 5.3–5.6 %).
+
+| Trained on → tested on | All | Pre-knowledge slot | Look-up slot | Peer-copying slot | Proxy slot |
+|---|---:|---:|---:|---:|---:|
+| Injection → injection | 79.8 | 79.9 | 99.0 | 99.4 | 21.9 |
+| Injection → behaviour | 45.1 | 52.8 | 29.1 | 64.4 | 24.8 |
+| Behaviour → injection | 48.7 | 33.9 | 27.5 | 100.0 | 41.7 |
+| Behaviour → behaviour | 69.6 | 77.2 | 75.6 | 75.2 | 34.5 |
+
+![Figure 4](../../ml/experiments/inflation/results/figures/F7_supervised.png)
+
+**Figure 4.** Recall of the supervised classifier by training world, test world and cheating type (mean over 20 replicates with 95 % interval).
+
+**Classical indices.** The answer-similarity statistic restricted to incorrect answers detects 99.9 % of injected collusion and 50.4 % of behaviour-level copying, almost equally for pairs that submit together and separately (Table 4). It is thus as inflated by the injection as the peer features are, but it does not depend on synchrony and exceeds IF + peers on pairs that submit separately. The response-time person-fit statistic detects 38.6 % of injected rapid responders and 9.4 % of behaviour-level pre-knowledge, and 55.6 % against 15.8 % in the look-up slot. It also detects 44.0 % of behaviour-level copying against 6.2 % of injected collusion; copiers wait for the source and then answer quickly, which is the kind of irregular timing the statistic measures.
+
+**Other unsupervised detectors.** The local outlier factor [@breunig2000lof] and a one-class support vector machine [@scholkopf2001support] reproduce the pattern of Table 3 for look-up (53–56 pp), peer copying (27–29 pp with peer features) and proxy (Supplement S4). With peer features they detect more behaviour-level cheating overall than any of the frozen detectors (40.9 % and 44.4 % against 36.2 % for the rules, at a realised FPR of 5.1–5.3 %).
+
+### 4.7 Precision at a low prevalence
+
+With cheating on 5 % of final attempts (1.7 % of all attempts) there are about four alerts per 100 attempts (Table 7). Under behaviour-level cheating the precision of the rules is 15.0 %, less than half of what the original generator suggests. For IF + peers there is no such inflation: its precision is 17–20 % in all three conditions, because under behaviour-level cheating it raises fewer alerts. Among final attempts only, where all cheating occurs, 32 % of the rules' alerts and 40 % of the alerts of IF + peers concern cheaters. The recall differences between the two worlds are as large at this prevalence as in Table 3 (23–25 pp over all cheating attempts).
+
+**Table 7.** Precision (%) at the frozen 5 % threshold when 5 % of final attempts are cheating attempts (20 replicates).
+
+| Detector | LEGACY | SIM-FI | SIM-BL |
 |---|---:|---:|---:|
-| SIM-FI → SIM-BL | 5.4 / 36.3 | 5.3 / 23.1 | 5.1 / 27.8 |
-| SIM-BL → SIM-FI | 5.2 / 61.4 | 5.3 / 46.1 | 5.0 / 53.5 |
-| LEGACY → SIM-BL | 27.6 / 53.2 | 22.9 / 40.4 | 21.7 / 42.6 |
-| LEGACY → SIM-FI | 27.5 / 80.4 | 22.9 / 71.5 | 21.7 / 73.5 |
+| Rules | 34.0 [26.3, 42.6] | 27.4 [22.6, 32.8] | 15.0 [11.7, 19.0] |
+| IF | 17.5 [14.5, 20.6] | 15.3 [13.6, 17.1] | 6.6 [5.0, 8.5] |
+| IF + peers | 18.1 [15.5, 20.6] | 19.7 [15.1, 25.0] | 17.4 [10.6, 26.5] |
 
-![Figure 3](../../ml/experiments/inflation/results/figures/F3_transfer.png)
+### 4.8 Real data
 
-**Figure 3.** Realised FPR (top) and recall on all cheating attempts (bottom) when the reference, model and 5 % threshold validated on condition X are applied to the test cohorts of condition Y.
+A classifier separates real EdNet attempts from attempts of the original generator and of the uncalibrated simulator almost perfectly (AUC 0.999 and 1.000). After calibration the AUC is 0.830 on the ten timing, change and score features and 0.947 on all twelve attempt-level features, which include the history features. Calibrated attempts are closer to real ones but remain clearly distinguishable.
 
-### 4.5 Dose–response and sensitivity to mechanism parameters
+Table 8 gives the share of real attempts flagged at a nominal 5 % by detectors without peer features. A detector fitted on a generator whose ordinary behaviour was never matched to the target platform flags a third of real attempts. This is covariate shift, and the more informative figure is the one after calibration: 11 % for IF and 22 % for the rules, two to four times the nominal rate. Replicates differ in the synthetic training data, and single replicates deviate from these means by several pp: for the rules fitted on the calibrated simulator the ten replicates range from 18.3 % to 27.9 %. The frozen IF + peers fitted on the calibrated simulator flags 5.3 %, but peer features are not meaningful on these data.
 
-**Dose–response.** Recall on pre-knowledge, look-up and peer copying rises monotonically with the intensity of the mechanism (Figure 4); recall on the proxy stays near the false-positive rate and does not rise monotonically.
-
-When one item in ten is affected, recall on pre-knowledge and look-up is at the level of the false-positive rate (2.6–5.4 %) for every detector. Peer copying remains partly detectable (13.2–19.6 % for the detectors with peer features), because the share of synchronously submitting pairs does not change with intensity.
-
-When every item is affected, the gap to the injection changes size and, for pre-knowledge, sign. The SIM-FI values below come from the same 10 replicates of the dose–response run:
-- **Pre-knowledge:** the rules detect 86.6 % of students with pre-knowledge, against 33.2 % of injected rapid responders. The forest with peer features detects 42.0 % against 35.4 %, and the forest without peer features 50.1 % against 55.7 %.
-- **Look-up:** recall is 60.6 % against 97.9 % injected for the rules (a gap of 37.3 points), 47.4 % against 91.1 % for the forest and 31.0 % against 63.5 % for the forest with peer features.
-
-Detectability is thus a property of how much a student cheats. A single injected magnitude can be pessimistic as well as optimistic, and the inflation reported in Section 4.2 holds for the default intensities (Table S2).
-
-![Figure 4](../../ml/experiments/inflation/results/figures/F4_dose_response.png)
-
-**Figure 4.** SIM-BL recall at the frozen 5 % FPR threshold against mechanism intensity, by cheating mechanism and detector (mean over 10 replicates with 95 % interval; dotted line: 5 %).
-
-**Sensitivity.** We drew forty Latin-hypercube configurations of the ten assumed mechanism parameters (Figure 5):
-- **Excessive changes ↔ look-up:** inflation exceeded 10 points in 98–100 % of configurations for all three detectors (medians 54–67 points).
-- **Collusion ↔ peer copying:** inflation exceeded 10 points in 100 % of configurations for the two detectors with peer features (medians 49 and 52 points). For the forest without peer features it was negative in all configurations (median −16 points).
-- **Rapid response ↔ pre-knowledge:** inflation was positive in 78–88 % of configurations for the forests (medians 9 and 20 points) and in 20 % for the rules (median −6 points).
-- **Score jump ↔ proxy:** inflation was positive in 0–2 % of configurations.
-
-Exploratory, uncorrected Spearman correlations associate the size of the inflation with:
-- the share of naive cheaters for pre-knowledge (ρ ≈ −0.8);
-- the propensity and duration of look-ups (ρ ≈ −0.8 and −0.6);
-- the probability of synchronous submission and the copied share for peer copying (ρ = −0.81 and −0.57 for the forest with peer features).
-
-The analysis did not vary several parameters:
-- the per-item coverage and recall of pre-knowledge;
-- the success rate of look-ups;
-- the dispersion and minimum gain of the proxy's ability;
-- the remaining timing parameters of peer copying (Table S2).
-
-![Figure 5](../../ml/experiments/inflation/results/figures/F5_sensitivity.png)
-
-**Figure 5.** SIM-FI − SIM-BL recall difference at the frozen 5 % threshold across 40 Latin-hypercube configurations of the mechanism parameters, by type and detector (one point per configuration; dashed line: 10 points).
-
-### 4.6 Precision at a low prevalence
-
-With cheating on 5 % of final attempts (1.67 % of all attempts) there are about four alerts per 100 attempts. The precision is:
-
-| Detector | Original generator | Injection on simulated students | Behaviour-level cheating |
-|---|---:|---:|---:|
-| Rules | 34.0 % | 27.4 % | 15.0 % |
-| Forest | 17.5 % | 15.3 % | 6.6 % |
-| Forest with peer features | – | – | 17.4 % [10.6, 26.5] |
-
-Under behaviour-level cheating, six out of seven alerts of the rules concern honest students. For the forest with peer features it is about five out of six.
-
-### 4.7 Hypothesis H1
-
-On behaviour-level data the forest with peer features does not exceed the rules (Holm adjustment over the two types):
-- on peer copying, the difference in recall is −4.5 [−7.4, −1.2] points (*p* = 0.046);
-- on proxy test-taking, it is −1.2 [−3.8, 1.4] points (*p* = 0.48).
-
-The pre-specified criterion (a gain of at least 15 points; rules adopted below 5 points) is not met. H1 is not supported on the simulated evaluation set, and the rules are adopted. The test on real anonymised logs planned in the verification plan is pending. The same verdict is obtained on the original generator and under injection, so it does not depend on the simulator.
-
-### 4.8 Other unsupervised detectors
-
-The local outlier factor and the one-class SVM, run under the same protocol, reproduce the pattern for look-up, peer copying and proxy (Figure A1):
-- on excessive changes ↔ look-up they lose 53–56 points (Holm-adjusted *p* ≤ 0.002);
-- on collusion ↔ peer copying they lose 27–29 points when peer features are included;
-- on score jump ↔ proxy they lose nothing.
-
-On pre-knowledge they resemble the rules more than the forests (−2.9 to +8.9 points). Without peer features, they also detect behavioural copying better than injected collusion (−23.0 and −9.6 points).
-
-The robust Mahalanobis detector is excluded from the main text because it was unstable on the original generator (degenerate covariance in 6 and 4 of 20 replicates). On SIM-FI − SIM-BL its difference on look-up is 37.7 and 29.5 points with and without peer features, neither significant after Holm adjustment (*p* = 0.21 and 0.84). These values are in the supplementary tables.
-
-![Figure A1](../../ml/experiments/inflation/results/figures/FA1_recall_robust.png)
-
-**Figure A1.** Recall at the frozen 5 % FPR threshold of the local outlier factor, one-class SVM and robust Mahalanobis detectors, with and without peer features, by type and condition (mean over 20 replicates with 95 % interval).
-
-### 4.9 Real data
-
-**How close are the synthetic sources to real behaviour?** A classifier separates real EdNet attempts from attempts of the original generator almost perfectly (AUC 0.999 on behavioural features), and equally well from the simulator with uncalibrated defaults (1.000). After calibration the AUC is 0.830 [0.828, 0.831]: simulated attempts are much closer to real ones but still distinguishable (Figure 6).
-
-Per-feature Kolmogorov–Smirnov distances for the mean, median and variance of answer times fall from 0.37–0.59 (original generator) to 0.07–0.22. The largest remaining discrepancies of the calibrated simulator are the variance of answer times (0.22), the attempt duration (0.19) and the score (0.13).
-
-**Flag rates when a synthetic-trained detector meets real behaviour.** Table 6 gives the share of real attempts flagged at a nominal 5 % by the detectors without peer features:
-- fitted on the original generator, or on the uncalibrated simulator: 30–39 % of real attempts;
-- fitted on the calibrated simulator: 11.4 % for the forest and 22.0 % for the rules, which is 2.3 and 4.4 times the nominal rate.
-
-The frozen forest with peer features, fitted on the calibrated simulator, flags 5.3 %. Peer features are not meaningful on these data, however (Section 3.5).
-
-**Table 6.** Share of real EdNet attempts flagged at a nominal 5 % FPR (detectors without peer features; mean over 10 replicates). The rules column uses the peer-free variant of the rules built by the evaluation harness, which is not part of the frozen pipeline.
+**Table 8.** Share of real EdNet attempts flagged at a nominal 5 % FPR (detectors without peer features; mean over 10 replicates with 95 % interval of the mean).
 
 | Detector fitted on | IF | Rules (attempt-level features) |
 |---|---:|---:|
@@ -493,144 +307,64 @@ The frozen forest with peer features, fitted on the calibrated simulator, flags 
 | Simulator, default parameters | 30.4 [28.5, 32.3] | 36.8 [35.1, 38.4] |
 | Simulator, calibrated | 11.4 [10.6, 12.2] | 22.0 [20.7, 23.6] |
 
-![Figure 6](../../ml/experiments/inflation/results/figures/F6_ednet.png)
-
-**Figure 6.** Real EdNet data. Left: share of real test attempts flagged at a nominal 5 % by the source the detector was fitted on. Centre: classifier two-sample AUC between real and synthetic ordinary attempts. Right: per-feature Wasserstein distance to EdNet in units of the EdNet standard deviation.
-
-**Who is flagged?** When the forest is fitted on real attempts, it flags 4.9 % of them overall, but the flags are far from evenly spread. Strata are quartiles defined by cut points from the training cohorts. They are unequal in size because of ties: the score strata hold 33, 28, 24 and 15 % of attempts.
-- **Answer time:** 12.6 % of attempts in the fastest quartile of median answer time are flagged, against 0.5–0.6 % in the two middle quartiles and 5.8 % in the slowest. The fastest quartile receives 65 % of all flags.
-- **Fast-answer fraction:** 15.0 % of attempts in the highest stratum are flagged.
-- **Score:** attempts in the lowest and in the highest score stratum are each flagged at 6.8 %, against 3.1–3.2 % in between. Because the lowest stratum is larger, it receives 46 % of all flags and the highest 21 %.
-
-For the rules fitted on real attempts, the slowest quartile is flagged as often as the fastest (8.0 % and 7.6 %). In an ungraded tutor these students have no reason to cheat. Under detectors of this kind, the fastest students and students at both ends of the score distribution carry a disproportionate share of the false alerts.
+When IF is refitted on real attempts it flags 4.9 % of them, unevenly: 12.6 % of attempts in the fastest quartile of median answer time against 0.5–0.6 % in the two middle quartiles, and 6.8 % in both the lowest and the highest score stratum against about 3 % in between. This follows from how a two-sided outlier detector on timing and score features works, and the strata are defined on detector inputs, so it is a description of who bears the false alerts and not an independent finding.
 
 ## 5. Discussion
 
-**Feature-aligned injection measures agreement between generator and detector.** At the same false-positive rate, performance on injected anomalies overstates performance on behaviourally simulated cheating in three places:
-- by 54–70 percentage points of recall on look-up, for all three detectors;
-- by 34–39 points on peer copying, for the two detectors with peer features;
-- by 11–26 points on pre-knowledge, for the two forests.
+**What the comparison shows.** At the constants that the platform's generator actually used, the same detectors on the same simulated students lose about a quarter of their recall in absolute terms when feature-aligned injection is replaced by behaviour-level cheating. The loss is concentrated in look-up and in peer copying. It is not a universal constant. The dose analysis shows that the difference can be made to take either sign by weakening the injection or strengthening the behaviour, and the sensitivity analysis shows that for pre-knowledge even the sign at plausible settings is open. The supportable claim is therefore that recall measured on feature-aligned injection does not predict recall on behaviour-level cheating, and that for the recipes examined here the error was large and optimistic for two of four types.
 
-Across the sensitivity analysis, the losses on look-up and on peer copying with peer features exceed 10 points in 98–100 % of configurations. The paired design rules out the alternative explanation that the simulated students are simply different: the honest attempts, the cohort partition and the identity of the cheaters are the same in both worlds.
+**Three properties of the recipes explain the result.**
 
-Three properties of the injections are visible in the results:
-- **Magnitude.** An injection is free to choose an effect size that no simulated behaviour produces: 27 extra answer changes, together with shorter first-answer times.
-- **Direction.** The injection encodes an assumption about what cheating looks like (cheaters are fast). A plausible mechanism, looking an answer up, makes students slower and more accurate instead (Table 1).
-- **Co-design.** The collusion recipe always satisfies the condition under which the peer features are evaluated, synchronous submission. As a result, the evaluation reflects that condition rather than testing it (Table 4).
+- *Magnitude.* An injection is free to choose an effect size that no simulated behaviour produces, such as 27 extra answer changes together with shorter first-answer times.
+- *Direction.* The recipe encodes an assumption about what cheating looks like. Looking an answer up makes simulated students slower and more accurate, not faster (Table 2).
+- *Co-design.* The collusion recipe always satisfies the condition under which the peer features are evaluated, at every dose, so the evaluation reflects that condition instead of testing it (Table 4, Figure 2).
 
-Why recipes take these forms we cannot establish from the data. The same losses on look-up and peer copying appear for the local outlier factor and the one-class SVM.
+Magnitude can be varied; direction and co-design cannot be repaired by tuning the dose.
 
-**Where inflation is absent or reversed.**
-- Proxy test-taking is detected near chance in every condition, so an evaluation on injected score jumps is pessimistic about the detector and realistic at the same time.
-- Per-feature rules lose nothing on pre-knowledge. They detect both naive and disguising cheaters, and the score gain from leaked items is one plausible signal.
-- With calibrated parameters, the forest without peer features detects behavioural copying better than injected collusion. The detected attempts are mostly copiers, not sources, but the effect disappears with uncalibrated parameters.
-- The forest with peer features shows a small negative difference on proxy test-taking.
+**The signal is present, and the choice of construction decides who finds it.** A supervised classifier trained on behaviour-level labels recovers most of the look-up, pre-knowledge and peer-copying cases from the same fifteen features. The low recall of the unsupervised detectors on behaviour-level cheating is therefore not a ceiling. It also means that a classifier trained on injected labels, which is the natural next step for a team that has built an injection generator, would learn the recipe: it reaches 99 % on injected look-up and 29 % on the behavioural one.
 
-Feature-aligned injection is therefore not uniformly optimistic: its error can go in either direction, and the direction cannot be predicted without modelling the behaviour.
-
-**The size of the gap depends on how much students cheat.** The dose–response results show that the comparison between injection and behaviour depends on the assumed intensity. At full coverage the rules detect behaviour-level pre-knowledge far more often than injected rapid responses (86.6 % against 33.2 %), and the look-up gap for the rules shrinks to 37.3 points. An injection fixes one magnitude, which may be too large or too small. The inflation figures above hold for the default intensities, and the sensitivity analysis did not vary the coverage of pre-knowledge or the success rate of look-ups.
-
-**Synthetic ordinary behaviour is a second, separate source of error.**
-- A detector validated on the original generator flags between a fifth and over a quarter of the calibrated simulated students (21.7–27.6 %).
-- Without peer features, it flags 31–39 % of real attempts at a nominal 5 %.
-- Calibrating the simulator on real logs reduces the classifier two-sample AUC from 1.00 to 0.83 and the transferred flag rate to 11–22 %, but does not remove the gap.
-
-The calibrated simulator still misfits some marginal distributions (variance of answer times, duration, score) and is still separable by a multivariate classifier. Operating thresholds must therefore be set on real ordinary behaviour of the target population. Simulation can inform the expected recall at such a threshold, not the threshold itself.
-
-**Comparison with the field experiment of Ranger et al.** With induced cheating in a 20-item exam, Ranger et al. report, according to their paper, detection of about 40–60 % of students with pre-knowledge by response-time indicators at a 5 % false-positive rate [@ranger2020eexams]. Our detectors reach 24–34 % on pre-knowledge, which is of the same order but lower. Their collusion condition did not produce a synchronous-submission signal comparable to ours, and none of their indicators detected it, so the two collusion results are not comparable. Recall near 100 % on collusion or answer changing, as obtained under injection, has no counterpart in their study.
+**Comparison with field experiments.** Ranger et al. detected about 40–60 % of students who had practised 8 of 20 items, at a 5 % false-positive rate [@ranger2020eexams]. At a comparable coverage (x = 0.5) our detectors reach 15–18 %, and 24–34 % at the default coverage of 0.65, so the simulated pre-knowledge is, if anything, harder to detect than the induced one. Their strong collusion condition cuts the other way for our look-up mechanism. Students who received all correct answers during the exam revised 6.6 answers against 0.8, and revision indicators detected over 80 % of them. Our simulated look-up adds less than one change, because half of the simulated cheaters consult the resource before answering. Real students who obtain answers after having answered behave more like the injected "excessive changes" than our default mechanism does, although the injection adds 27 changes, four times the observed number. The look-up difference at default settings should be read with this in mind; a mechanism in which answers arrive late and are corrected in bulk was not simulated.
 
 **Consequences for practice.**
-- At a low prevalence (5 % of final attempts) and under behaviour-level cheating, six of seven alerts of the rules, and about five of six of the forest with peer features, are false.
-- On real data, false alerts concentrate on the fastest students and on both ends of the score distribution.
-- A flag of this kind can prioritise a teacher's attention; it cannot support an accusation. Reporting only pooled false-positive rates hides who bears them; an analogous finding has been reported for detectors of AI-generated text, a different detection task, which misclassify non-native writers more often [@liang2023bias].
-- For the platform that motivated this study, the pre-specified hypothesis is not supported on the simulated evaluation set. The multivariate detector does not beat transparent per-feature rules, which are also easier to explain to the reviewing teacher, and the rules are adopted pending the test on real logs.
+
+- Operating thresholds must be set on real ordinary behaviour of the target population. Detectors developed on synthetic behaviour flagged 11–39 % of real attempts at a nominal 5 %.
+- Whether training data are purged of cheaters must be reported. With 12 % of cheating attempts in the training data, the reference-based rules lost about half of their recall without purging and the forests 4–10 pp, which reversed their ordering under injection; with 1.6 % the ordering did not change.
+- At a low prevalence most alerts are false, and they fall on the fastest students and on both ends of the score distribution; unequal error rates across groups of students are a known concern for educational algorithms [@baker2022bias]. A flag of this kind can prioritise a teacher's attention; it cannot support an accusation.
 
 **Recommendations for evaluating log-based cheating detectors.**
 
-1. Do not define synthetic positives in terms of the detector's own features. If injection is unavoidable, report the paired effect of each injection on every feature (a manipulation check as in Table 1) so that readers can judge its plausibility.
-2. Simulate cheating as behaviour with explicit mechanisms. Vary both intensity and the parameters that had to be assumed, and report the range, not a single operating point.
-3. Hold the honest population fixed when comparing ways of constructing positives (paired worlds, common random numbers).
-4. Freeze the detector and the threshold-selection rule before generating evaluation data, split by cohort or student, and report the realised false-positive rate on held-out data.
-5. Calibrate ordinary behaviour on real logs and quantify the remaining gap, for example with a classifier two-sample test. Estimate false-positive rates on real ordinary behaviour, broken down by student subgroups.
-6. Report recall per cheating type and per role (copier and source), and precision at a low prevalence.
-7. Label synthetic results as synthetic and state which claims would require real labelled cases.
+1. Do not define positive cases through the detector's own features or model family, whether by injection or by a labelling heuristic. If this is unavoidable, report the effect of the construction on every feature (Table 2) and state the overlap.
+2. Simulate cheating as behaviour with explicit mechanisms, vary the dose and the assumed parameters, and report the range of results. Report sub-populations that a detector's features single out, such as pairs that submit together.
+3. Hold the honest population fixed when comparing constructions, and check conclusions against at least one alternative model of honest behaviour.
+4. Freeze the detector and the threshold rule before generating evaluation data, set thresholds without labels, and evaluate with and without purging of the training data.
+5. Calibrate ordinary behaviour on real logs, quantify the remaining gap, and estimate false-positive rates on real ordinary behaviour. Label synthetic results as synthetic.
 
 ## 6. Limitations
 
-**Simulation.** The behaviour-level simulation is still a simulation. Its honest model is calibrated on real logs, but the cheating mechanisms rest on assumed parameters. The sensitivity analysis shows that the main conclusions hold across wide ranges of ten of them, not that the mechanisms are correct, and it did not vary the intensity of pre-knowledge or the success of look-ups. Four mechanisms do not exhaust how students cheat, and combinations were not simulated. The pairing of each mechanism with an injected type is a judgement. Several results, including the reversal for the forest without peer features on peer copying, change between uncalibrated and calibrated parameters (Section 4.2).
+**Simulation.** Both constructions compared here are synthetic, and so is every detection result. The honest model is calibrated on real logs, but the cheating mechanisms rest on assumed parameters; the sensitivity analysis shows how the conclusions move over wide ranges of fourteen of them, not that the mechanisms are correct. Four mechanisms do not exhaust how students cheat, combinations were not simulated, and the pairing of each mechanism with an injected type is a judgement. Synchronous submission was added to peer copying after a pilot.
 
-**Calibration data.** The calibration data come from a self-study English tutor with adaptive item selection, not from course examinations: there are no deadlines, stakes or common sittings, and items are matched to learners. Pseudo-attempts were constructed from continuous sittings of the 7.2 % of users who produced one.
+**Injection recipes.** The recipes are those of one platform's generator. The scoping sample suggests that strict feature-aligned injection is uncommon in published work, and we did not re-implement a published recipe. The results show what happened with these recipes, and why; they do not estimate how large the problem is in the literature.
 
-The fitted model reproduces response-time distributions well but has known misfits:
-- too dispersed within attempts;
-- too narrow in attempt duration;
-- about one point too low in score;
-- a too-light tail of answer changes.
+**Honest behaviour.** The calibration data come from an ungraded self-study tutor with adaptive item selection, not from course examinations. The fitted model has known misfits (Section 3.4), the guessing parameter comes from a fit that had not converged, and the practice gain is weakly identified. Students in the simulation do not remember items across the three attempts on the same form. The closing-time variant does not model students who speed up before a deadline. A classifier still separates calibrated simulated attempts from real ones. EdNet has no cheating labels, so the real-data analysis concerns false positives only, under the assumption that cheating in an ungraded tutor is negligible.
 
-The selected guessing parameter comes from a fit that had not converged, and the practice gain is weakly identified. A classifier still separates calibrated simulated attempts from real ones (AUC 0.83). EdNet has no cheating labels, so the real-data analysis concerns false positives only, under the assumption that cheating in an ungraded tutor is negligible.
+**Protocol.** The study uses one assessment format and one family of features. The prevalence in the main experiment is high. Analyses added after the main results were seen are exploratory, and their number is large enough that individual small effects should not be over-read; the conclusions rest on effects of tens of percentage points. All replicates share code and parameter files and do not cover model uncertainty.
 
-**Design and protocol.**
-- **Format.** The study uses one assessment format (20 four-option items, cohorts of 20, three attempts) and a detector family built on fifteen attempt-level and peer features.
-- **Prevalence.** The main experiment uses a high prevalence of cheating, inherited from the original generator, which affects peer features of ordinary students. The low-prevalence analysis reports precision but was not used for the paired tests.
-- **Thresholds.** They are chosen with the validation labels of the same condition, so they are oracle operating points for that condition. In the transfer to real data the LEGACY threshold uses LEGACY labels, while the simulator threshold uses honest attempts only.
-- **Replicates.** The dose–response and real-data analyses use 10 replicates and the sensitivity analysis 3 per configuration; all replicates share code and parameter files, so they do not cover model uncertainty.
-- **Psychometric indices.** Indices designed for specific forms of fraud, which use item-level information, were not evaluated and may behave differently.
-- **Amendments.** One amendment (synchronous submission in peer copying) was made after a single-seed pilot on uncalibrated parameters. It increases detectability, its 50 % share is assumed, and results are reported separately for both kinds of pairs. Secondary analyses were added after the uncalibrated run (Section 3.6).
+**External validation.** No labelled real data were used. The experimental pre-knowledge data of Toton and Maynes [@toton2019preknowledge] would provide a labelled anchor for one mechanism; we found no openly licensed copy.
 
 ## 7. Conclusions
 
-Evaluating log-based cheating detectors on anomalies injected along the detectors' own features can strongly overstate what they can do. We held the detectors, the students, the cohorts and the cheaters fixed and replaced feature-aligned injection by behaviour-level cheating. At a 5 % false-positive rate this:
-- reduced overall recall to between 0.49 and 0.58 of its injected value;
-- removed 54–70 points of recall on look-up for all detectors;
-- removed 34–39 points on peer copying for the detectors with peer features;
-- removed 11–26 points on pre-knowledge for the two forests.
-
-It changed nothing for the rules on pre-knowledge. Proxy test-taking was detected near chance in every condition. The difference was reversed for the forest without peer features on peer copying (under calibrated parameters only) and slightly negative for the forest with peer features on proxy test-taking. The size and even the sign of the gap depend on how intensively students cheat, which a single injected magnitude cannot represent.
-
-Detectors without peer features that were developed on synthetic ordinary behaviour flag one tenth to four tenths of real ordinary attempts at a nominal 5 %, depending on how carefully that behaviour was calibrated. On real data, false alerts fall mainly on the fastest students and on both ends of the score distribution. Synthetic evaluation remains useful when cheating is modelled as behaviour, its assumptions are varied, and its results are presented as what they are. Verified cases from consented pilots remain the only basis for claims about detecting actual misconduct.
+When the anomalies used to evaluate a cheating detector are defined along the detector's own features, the evaluation says little about behaviour that was not built that way. With detectors, students and cheaters held fixed, replacing the injection recipes of one platform by behaviour-level cheating removed about a quarter of recall in absolute terms at a 5 % false-positive rate. Most of the loss came from look-up and peer copying, there was none for proxy test-taking, and the sign depended on dose for pre-knowledge. The same happened to a supervised classifier trained on injected labels, although the features carried enough signal for a classifier trained on behaviour-level labels to find most cases. Detectors developed on synthetic ordinary behaviour over-flagged real attempts two- to eightfold. Synthetic evaluation remains useful when cheating is modelled as behaviour, its assumptions are varied, and its results are presented as what they are. Verified cases from consented pilots remain the only basis for claims about detecting actual misconduct.
 
 ---
 
-## Appendix: Table S2
-
-**Table S2.** Mechanism parameters (`sim/params/mechanisms.json`), their default values and the ranges of the sensitivity analysis (`SENSITIVITY_PARAMETERS` in `ml/experiments/inflation/run.py`). Medians of lognormal durations were sampled log-uniformly; "–" means the parameter was held at its default.
-
-| Mechanism | Parameter | Default | Sensitivity range |
-|---|---|---:|---:|
-| Pre-knowledge | per-item coverage (leak probability) | 0.65 | – (dose–response only) |
-| Pre-knowledge | recall of a leaked item | 0.92 | – |
-| Pre-knowledge | share of naive cheaters | 0.5 | 0–1 |
-| Pre-knowledge | speed-up factor, upper bound | 0.60 | 0.3–0.9 |
-| Pre-knowledge | speed-up factor, lower bound | 0.25 | 0.4 × upper bound |
-| Look-up | propensity on unknown items | 0.70 | 0.3–1.0 |
-| Look-up | success probability | 0.90 | – |
-| Look-up | duration, median (log-SD 0.60) | 35 s | 10–90 s |
-| Look-up | share of cheaters in verify mode | 0.5 | 0–1 |
-| Peer copying | per-item coverage | 0.80 | 0.3–1.0 |
-| Peer copying | relay delay, median (log-SD 0.50) | 6.0 s | 2–30 s |
-| Peer copying | answer entry time, median (log-SD 0.40) | 5.0 s | – |
-| Peer copying | start lag, median (log-SD 0.80) | 15 s | 5–300 s |
-| Peer copying | probability of following a source change | 0.50 | – |
-| Peer copying | probability that the abler student is the source | 0.80 | – |
-| Peer copying | source communication overhead, median (log-SD 0.50) | 3.0 s | – |
-| Peer copying | share of synchronously submitting pairs | 0.5 | 0–1 |
-| Peer copying | synchronous submission offset, median (log-SD 0.70) | 2.0 s | – |
-| Proxy | mean ability of the proxy | 1.2 | 0.5–2.0 |
-| Proxy | SD of the proxy's ability | 0.5 | – |
-| Proxy | minimum ability gain | 0.5 | – |
-
 ## Supplementary material and availability
 
-- **Code and results:** https://github.com/Newterios/Examory. The repository contains:
-  - the simulator (`sim/`);
-  - EdNet conversion and calibration (`ml/ednet/`);
-  - the experiment harness, per-replicate results, tables and figures (`ml/experiments/inflation/`);
-  - the frozen detector pipeline (`ml/anomaly/`).
-- **Table S1** (calibrated parameters with confidence intervals and fit diagnostics): `ml/ednet/calibration_report.md`.
-- **Table S2:** Appendix above; full definitions in `sim/README.md`.
-- **Supplementary tables** (partial AUC, additional detectors, dose–response, sensitivity, prevalence, sub-mechanism breakdown, strata on real data, results with uncalibrated parameters): `ml/experiments/inflation/results/tables/` and `ml/experiments/inflation/results_defaults/`.
-- **Figures:** `ml/experiments/inflation/results/figures/` (Figures 1–6 and A1 above).
-- **Data:** EdNet is available from its maintainers (https://github.com/riiid/ednet) under CC BY-NC 4.0; it is not redistributed here. Scripts record the SHA-256 of the archives used.
+- **Code and results:** https://github.com/Newterios/Examory. The repository contains the simulator (`sim/`), the EdNet conversion and calibration (`ml/ednet/`), the experiment harness with per-replicate results, tables and figures (`ml/experiments/inflation/`), and the frozen detector pipeline (`ml/anomaly/`).
+- **Supplement S1** (calibration: procedure, estimates with confidence intervals, fit diagnostics): `ml/ednet/calibration_report.md`.
+- **Supplement S2** (features, injection recipes, mechanism parameters and the ranges of the sensitivity analysis): `docs/11_paper/supplement/S2_methods_details.md`; full definitions in `sim/README.md`.
+- **Supplement S3** (scoping sample of 48 studies): `docs/11_paper/supplement/S3_scoping_survey.md`.
+- **Supplement S4** (all result tables: metrics at 1 % FPR, partial AUC, transfer between conditions, dose grids, sensitivity, protocol and baseline variants, supervised and classical detectors, additional unsupervised detectors, prevalence, hypothesis H1, strata on real data, results with uncalibrated parameters): `ml/experiments/inflation/results/tables/` and `ml/experiments/inflation/results_defaults/`; the analysis plan and amendment log are in `ml/experiments/inflation/README.md`.
+- **Data:** EdNet is available from its maintainers (https://github.com/riiid/ednet) under CC BY-NC 4.0 and is not redistributed here. Scripts record the SHA-256 of the archives used.
 
 ## Declarations
 

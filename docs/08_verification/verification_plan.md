@@ -14,6 +14,8 @@ Purpose: define how the achievement of the project aim will be demonstrated: whi
 
 **Status of H1 (14 Nov 2026).** Tested on the detector-independent evaluation set of §3b (20 replicates, EdNet-calibrated simulator): the recall gain of Isolation Forest + peer features over quantile rules at FPR ≤ 5 % is −4.5 pp on peer copying and −1.2 pp on proxy test-taking, so the criterion is not met and the rules are adopted. The test on real anonymized quiz logs (LMS-36) is still open. Tables: `ml/experiments/inflation/results/tables/h1.md`; write-up: `docs/11_paper/manuscript.md`.
 
+**Caveat added 15 Nov 2026.** This verdict assumes that the detector is fitted on data from which cheating attempts were removed. In the main experiment 12 % of the training attempts are cheating attempts; if they are left in, the rules lose most of their recall and the gain of the forest on peer copying becomes +21.4 pp [15.6, 26.6] (proxy +2.1 pp). At a prevalence of 5 % of final attempts (1.6 % of training attempts) the rules stay ahead with and without purging (−16.6 pp and −5.2 pp on peer copying). The rules are therefore adopted on the condition that the reference data of a quiz are not heavily contaminated; the pilot on real logs has to check this. Tables: `protocol.md`, `protocol_prevalence.md` in the same folder.
+
 If H1 fails, the contribution of the project is the measured negative result plus the platform: explainable rules integrated end to end with teacher adjudication, which no compared LMS offers (existing_systems.md).
 
 ## 1. Test levels
