@@ -85,7 +85,7 @@ docs/
   08_verification/    verification and evaluation plan
   09_project_management/  milestones, responsibilities, risks
   10_supervisor_feedback.md
-  11_paper/           article draft, supplements and verified bibliography
+  11_paper/           article draft, supplements, verified bibliography, conference version (sist2027/)
 services/             Go microservices of the platform core (one folder per service)
 analytics/            personalized learning analytics module
 ml/                   ML experiments, notebooks, model training and inference services
