@@ -31,20 +31,25 @@
 
 \title{Feature Injection Can Inflate the Performance of Quiz-Cheating Detectors: Evidence From Behavior-Level Simulation}
 
-% Two authors, as decided on 15 Nov 2026. TODO before submission: add the
-% e-mail addresses (required by the template) and, optionally, ORCID identifiers.
+% Two authors, as decided on 15 Nov 2026. The public repository does not hold
+% e-mail addresses: `submission.tex` builds the version for upload with the
+% author block from `authors.local.tex` (git-ignored; copy authors.example.tex).
+\ifdefined\AuthorBlockFile
+  \input{\AuthorBlockFile}
+\else
 \author{\IEEEauthorblockN{Aitbek Kaiyrbekuly}
 \IEEEauthorblockA{\textit{School of Software Engineering} \\
 \textit{Astana IT University}\\
 Astana, Kazakhstan \\
 e-mail to be added}
 \and
-\IEEEauthorblockN{Aivar A. Sakhipov}
+\IEEEauthorblockN{Aivar Sakhipov}
 \IEEEauthorblockA{\textit{School of Software Engineering} \\
 \textit{Astana IT University}\\
 Astana, Kazakhstan \\
 e-mail to be added}
 }
+\fi
 
 \maketitle
 
@@ -239,8 +244,12 @@ We recommend the following for evaluating log-based cheating detectors. (i) Do n
 \section{Conclusion}
 When the anomalies used to evaluate a cheating detector are defined along the detector's own features, the evaluation says little about behavior that was not built that way. With detectors, students and cheaters held fixed, replacing the injection recipes of one platform by behavior-level cheating removed 23--26\pp{} of recall at a 5\% false-positive rate, most of it on look-up and peer copying. The same happened to a supervised classifier trained on injected labels, although the features carried enough signal for a classifier trained on behavior-level labels to find most cases. Detectors developed on synthetic ordinary behavior over-flagged real attempts two- to eightfold. Synthetic evaluation remains useful when cheating is modeled as behavior, its assumptions are varied, and its results are presented as what they are. The simulator, the calibration and all results are available at \url{https://github.com/Newterios/Examory}.
 
-% Acknowledgment: to be completed by the corresponding author (funding, and
-% the disclosure required by the IEEE policy on AI-generated content).
+\section*{Acknowledgment}
+The authors thank Y. Akhanov, who developed the anomaly-detection pipeline and the original data generator of the Examory platform that are evaluated in this work.
+% To be completed by the corresponding author before submission: funding, if
+% any, and the disclosure that the IEEE policy requires when AI-generated
+% content (text, figures, code) is used in a paper.
+
 
 \bibliographystyle{IEEEtran}
 \bibliography{IEEEabrv,refs}
