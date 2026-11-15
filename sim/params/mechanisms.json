@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "preknowledge": {
+    "coverage": 0.65,
+    "recall": 0.92,
+    "naive_prob": 0.5,
+    "speedup_low": 0.25,
+    "speedup_high": 0.60
+  },
+  "lookup": {
+    "propensity": 0.70,
+    "success": 0.90,
+    "duration_log_ms_mean": 10.46,
+    "duration_log_sd": 0.60,
+    "verify_mode_prob": 0.50
+  },
+  "copy_peer": {
+    "coverage": 0.80,
+    "relay_log_ms_mean": 8.70,
+    "relay_log_sd": 0.50,
+    "entry_log_ms_mean": 8.52,
+    "entry_log_sd": 0.40,
+    "start_lag_log_ms_mean": 9.62,
+    "start_lag_log_sd": 0.80,
+    "follow_change_prob": 0.50,
+    "stronger_is_source_prob": 0.80,
+    "source_overhead_log_ms_mean": 8.00,
+    "source_overhead_log_sd": 0.50,
+    "sync_submit_prob": 0.5,
+    "sync_submit_log_ms_mean": 7.6,
+    "sync_submit_log_sd": 0.7
+  },
+  "proxy": {
+    "theta_mean": 1.2,
+    "theta_sd": 0.5,
+    "min_gain": 0.5
+  },
+  "fi": {
+    "rapid_item_prob": 0.65,
+    "rapid_scale_low": 0.18,
+    "rapid_scale_high": 0.55,
+    "rapid_min_ms": 500,
+    "changes_prob_low": 0.45,
+    "changes_prob_high": 0.75,
+    "changes_max_count": 4,
+    "collusion_forced_wrong_fraction": 0.30,
+    "collusion_copy_prob": 0.90,
+    "collusion_duration_jitter": 0.03,
+    "collusion_start_window_ms": 8000,
+    "collusion_submit_window_ms": 1000,
+    "score_jump_low": 0.18,
+    "score_jump_high": 0.32,
+    "score_prob_cap": 0.98
+  }
+}

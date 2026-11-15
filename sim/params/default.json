@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "source": {
+    "kind": "defaults",
+    "note": "Uncalibrated literature-style defaults. Replace with the output of ml/ednet/calibrate.py for reported experiments."
+  },
+  "person": {
+    "theta_sd": 1.0,
+    "tau_sd": 0.30,
+    "theta_tau_corr": 0.25,
+    "practice_gain_mean": 0.10,
+    "practice_gain_sd": 0.10,
+    "disengage": { "p_zero": 0.75, "beta_a": 1.2, "beta_b": 12.0 },
+    "revise": { "beta_a": 1.5, "beta_b": 20.0 }
+  },
+  "item_prior": {
+    "b_mean": -0.3,
+    "b_sd": 1.0,
+    "log_a_mean": 0.0,
+    "log_a_sd": 0.3,
+    "c": 0.2,
+    "beta_mean": 10.1,
+    "beta_sd": 0.35,
+    "log_sigma_mean": -0.7,
+    "log_sigma_sd": 0.2,
+    "distractor_alpha": [2.0, 1.0, 0.5]
+  },
+  "items": [],
+  "rapid_guess": { "log_ms_mean": 7.6, "log_sd": 0.5 },
+  "revision": {
+    "change_mult_wrong": 1.6,
+    "change_mult_right": 0.8,
+    "wrong_to_right": 0.55,
+    "delay_log_ms_mean": 8.3,
+    "delay_log_sd": 0.7,
+    "second_change_prob": 0.15
+  },
+  "gap": { "log_ms_mean": 7.3, "log_sd": 0.5 },
+  "review": { "log_ms_mean": 9.9, "log_sd": 0.8 },
+  "min_response_ms": 500
+}

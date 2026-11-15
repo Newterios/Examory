@@ -12,6 +12,10 @@ Purpose: define how the achievement of the project aim will be demonstrated: whi
 | H2 | Explanations and evidence reduce teacher review time and increase agreement with the signal | review with evidence vs review of raw attempt data | pilot course, ≥ 2 teachers, ≥ 20 cases each | median review time −30 %; agreement (confirmed / total) reported with CI |
 | H3 | Windowed MinHash/LSH with exact verification recovers literal and lightly edited reuse with candidate recall ≥ 0.95 at a fraction of exhaustive cost | LSH vs exhaustive Jaccard vs TF-IDF | PAN-PC-11 subset | pair precision ≥ 0.90, recall ≥ 0.85 on reuse ≥ 50 tokens |
 
+**Status of H1 (14 Nov 2026).** Tested on the detector-independent evaluation set of §3b (20 replicates, EdNet-calibrated simulator): the recall gain of Isolation Forest + peer features over quantile rules at FPR ≤ 5 % is −4.5 pp on peer copying and −1.2 pp on proxy test-taking, so the criterion is not met and the rules are adopted. The test on real anonymized quiz logs (LMS-36) is still open. Tables: `ml/experiments/inflation/results/tables/h1.md`; write-up: `docs/11_paper/manuscript.md`.
+
+**Caveat added 15 Nov 2026.** This verdict assumes that the detector is fitted on data from which cheating attempts were removed. In the main experiment 12 % of the training attempts are cheating attempts; if they are left in, the rules lose most of their recall and the gain of the forest on peer copying becomes +21.4 pp [15.6, 26.6] (proxy +2.1 pp). At a prevalence of 5 % of final attempts (1.6 % of training attempts) the rules stay ahead with and without purging (−16.6 pp and −5.2 pp on peer copying). The rules are therefore adopted on the condition that the reference data of a quiz are not heavily contaminated; the pilot on real logs has to check this. Tables: `protocol.md`, `protocol_prevalence.md` in the same folder.
+
 If H1 fails, the contribution of the project is the measured negative result plus the platform: explainable rules integrated end to end with teacher adjudication, which no compared LMS offers (existing_systems.md).
 
 ## 1. Test levels
@@ -68,5 +72,6 @@ Every `must` requirement maps to one acceptance test (TS §7, AC-1…AC-12). The
 ## 6. Stage-1 status of this plan
 
 - Executed: unit tests for `ml/anomaly` and `ml/integrity`; offline evaluation of the anomaly baseline on synthetic data (`ml/anomaly/results.md`); CI builds docs and compose validity.
-- Not executed yet: PAN-PC-11 run; detector-independent evaluation (§3b); any integration or end-to-end test (no platform code); load, security, usability checks; pilot.
+- Executed 14 Nov 2026: detector-independent evaluation (§3b) with the behaviour simulator in `sim/`, timing calibrated on EdNet-KT2 (`ml/ednet/`), results in `ml/experiments/inflation/results/`.
+- Not executed yet: PAN-PC-11 run; any integration or end-to-end test (no platform code); load, security, usability checks; pilot.
 - What counts as done if the university does not approve video capture: FR-52 is `should` and is accepted with a fixture; consent, session lifecycle, agent allowlist signals and the alternative path for students without Windows (FR-47–FR-51, FR-53–FR-55, FR-57, FR-58) are verified with test accounts and constitute the proctoring deliverable of the MVP.
