@@ -26,7 +26,7 @@ The paper fits Track 4, Computational Intelligence: "Applications of Computation
 | At least 10 references | call for papers | met: 32 |
 | At least 30 % of references from Scopus or Web of Science | call for papers | expected to be met: 24 of the 32 references are journal articles (Springer, Wiley, SAGE, IEEE, ACM, Elsevier, Frontiers, MDPI, PLOS, MIT Press) and 10 are needed; confirm the indexing of the final list in Scopus before submission |
 | Self-citations at most 20 % | call for papers | met: none |
-| At most 6 authors; one author may submit up to 3 papers | call for papers | to confirm (see below) |
+| At most 6 authors; one author may submit up to 3 papers | call for papers | met: two authors |
 | References numbered in order of citation; "et al." for six or more authors | template | met: `IEEEtran.bst` with the control entry in `refs.bib` |
 | Figure labels in words, captions below figures, table heads above tables | template | met |
 | Original, unpublished, not under review elsewhere; screened with CrossCheck | guidelines | see the note on the public repository below |
@@ -34,7 +34,7 @@ The paper fits Track 4, Computational Intelligence: "Applications of Computation
 
 ## What the authors still have to do
 
-1. **Author block.** Confirm the list and order of authors and the spelling of the supervisor's name; add e-mail addresses (required by the template) and, optionally, ORCID identifiers. They are placeholders in `paper.tex` because the repository is public.
+1. **Author block.** The paper has two authors, the student and the supervisor. Confirm the spelling of the supervisor's name; add e-mail addresses (required by the template) and, optionally, ORCID identifiers. They are placeholders in `paper.tex` because the repository is public.
 2. **Acknowledgment.** Funding, if any, and the disclosure that IEEE requires when AI-generated content is used in a paper (the IEEE policy asks for it in the acknowledgments section). The place is marked in `paper.tex`.
 3. **Similarity check.** The long version of the article is in this public repository. It has not been published, but a similarity service may index it. If the conference asks, state that the repository is the authors' own supplementary material; alternatively move the long draft out of the public tree before submission.
 4. **Subject areas in CMT.** Primary: Computational Intelligence (applications in education); secondary: Computer Science (testing methods and tools).

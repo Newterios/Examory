@@ -12,7 +12,7 @@ This report answers point 4 of the supervisor review of 23 October 2026 (`docs/1
 | EdNet-KT2 pipeline: extraction of Part 5, conversion of real attempts to the event contract, calibration of the learner model | `ml/ednet/` | run on the full archive; `calibration.json`, `calibration_report.md` |
 | Experiment harness and statistics around the frozen detectors of `ml/anomaly/` | `ml/experiments/inflation/` | all stages run; tables and figures under `results/`; 44 unit tests |
 | Article draft, three supplements and bibliography (83 entries, DOIs checked against Crossref) | `docs/11_paper/` | revised after an independent methods review; numbers cross-checked against the generated tables |
-| Conference version for IEEE SIST 2027 (6 pages, IEEE two-column format, PDF), with the venue's requirements checked | `docs/11_paper/sist2027/` | ready except for the author block and the acknowledgment; submission deadline 12 Feb 2027 |
+| Conference version for IEEE SIST 2027 (6 pages, IEEE two-column format, PDF), with the venue's requirements checked | `docs/11_paper/sist2027/` | ready except for the e-mail addresses and the acknowledgment; submission deadline 12 Feb 2027 |
 | Outcome of hypothesis H1 | `docs/08_verification/verification_plan.md` §0 | recorded, with a caveat on training-data purging |
 
 ## Revision of 15 November
@@ -45,7 +45,7 @@ A scoping sample of 48 published studies was coded to check the premise of the a
 - No real labelled cheating cases and no AITU quiz logs were used; every detection result is on simulated cheating. The experimental pre-knowledge data of Toton and Maynes (2019) would be a labelled anchor, but no openly licensed copy was found; the authors could be asked.
 - Mechanism parameters are assumptions, varied in a sensitivity analysis. One mechanism suggested by the field experiment of Ranger et al. (answers received late and corrected in bulk) was not simulated.
 - The behaviour simulator has not yet been replayed through the platform's quiz service; this check needs the M4 services of LMS-38 in `main`.
-- The venue recommended by the supervisor is the IEEE SIST 2027 conference; the conference version is prepared, but the author list, e-mail addresses and the acknowledgment are still open and nothing was submitted. The long manuscript (Markdown, about 8,700 words with tables) is kept for a later journal version; a shortlist of journals with their requirements was prepared for the supervisor.
+- The venue recommended by the supervisor is the IEEE SIST 2027 conference; the conference version is prepared, but the e-mail addresses and the acknowledgment are still open and nothing was submitted; the authors are the student and the supervisor. The long manuscript (Markdown, about 8,700 words with tables) is kept for a later journal version; a shortlist of journals with their requirements was prepared for the supervisor.
 
 ## Reproduction
 
