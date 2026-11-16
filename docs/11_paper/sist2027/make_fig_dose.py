@@ -28,6 +28,8 @@ ROW_ORDER = ("quantile_rules", "iforest_no_peers", "iforest")
 ROW_LABEL = {"quantile_rules": "Rules", "iforest_no_peers": "IF", "iforest": "IF+peers"}
 COL_TITLE = {"S1": "Pre-knowledge", "S2": "Look-up", "S3": "Peer copying", "S4": "Proxy"}
 WIDTH, HEIGHT = 7.16, 3.85
+LABEL_PT = 8  # cell digits; the figure prints at 0.94 of the text width
+HATCH_GREY = "0.5"
 
 
 def load_summary() -> dict:
@@ -38,7 +40,7 @@ def load_summary() -> dict:
 
 
 def includes_zero(cell: dict) -> bool:
-    """Exactly F8's convention: significant iff low > 0 or high < 0; otherwise marked with a circle."""
+    """Exactly F8's convention: significant iff low > 0 or high < 0; otherwise the cell is hatched."""
     return not (cell["low"] is not None and (cell["low"] > 0 or cell["high"] < 0))
 
 
@@ -96,15 +98,15 @@ def pick_font() -> str:
 
 def plot(summary: dict, png: Path | None = None) -> None:
     plt = analyze._plt()
-    from matplotlib import (
-        patheffects,  # Agg backend + the project's rcParams (pdf.fonttype 42)
-    )
+    # Agg backend + the project's rcParams (pdf.fonttype 42)
+    from matplotlib import patheffects
+    from matplotlib.patches import Rectangle
     font = pick_font()
     plt.rcParams.update({"font.family": "serif", "font.serif": [font], "mathtext.fontset": "stix",
                          "pdf.fonttype": 42, "ps.fonttype": 42, "savefig.bbox": "standard",
                          "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
                          "xtick.major.size": 2, "ytick.major.size": 2, "xtick.major.pad": 1.5,
-                         "ytick.major.pad": 1.5})
+                         "ytick.major.pad": 1.5, "hatch.linewidth": 0.45, "hatch.color": HATCH_GREY})
     lambdas, xs = summary["lambdas"], summary["intensities"]
     # identical colour limit to F8: max |mean| over every delta cell of the summary
     limit = max(abs(c["mean"]) for c in summary["delta"].values() if c["mean"] is not None) * 100
@@ -113,7 +115,7 @@ def plot(summary: dict, png: Path | None = None) -> None:
     fig.subplots_adjust(left=left, right=right, bottom=bottom, top=top, wspace=0.07, hspace=0.12)
     axes = fig.subplots(len(ROW_ORDER), len(SLOTS), squeeze=False)
     numeric = [k for k, x in enumerate(xs) if x != "default"]
-    contour_drawn = 0
+    contour_drawn, hatched, contour_panels = 0, 0, []
     for i, d in enumerate(ROW_ORDER):
         for j, s in enumerate(SLOTS):
             cells = [[summary["delta"][f"{d}|slot:{s}|{lam}|{x}"] for x in xs] for lam in lambdas]
@@ -121,9 +123,15 @@ def plot(summary: dict, png: Path | None = None) -> None:
             ax = axes[i][j]
             image = ax.imshow(grid, cmap="RdBu_r", vmin=-limit, vmax=limit, origin="lower", aspect="auto")
             part = grid[:, numeric]
-            if part.min() < 0 < part.max():  # F8: zero contour over the ordered intensity grid only
+            # zero contour over the ordered intensity grid only, and only where the sign change is
+            # real: some cell's 95 % interval lies entirely above zero and another's entirely below
+            ordered = [row[k] for row in cells for k in numeric]
+            above = any(c["low"] is not None and c["low"] > 0 for c in ordered)
+            below = any(c["high"] is not None and c["high"] < 0 for c in ordered)
+            if above and below and part.min() < 0 < part.max():
                 ax.contour(numeric, range(len(lambdas)), part, levels=[0], colors="black", linewidths=0.8)
                 contour_drawn += 1
+                contour_panels.append(f"{ROW_LABEL[d]}/{COL_TITLE[s]}")
             if len(numeric) < len(xs):
                 ax.axvline(len(numeric) - 0.5, color="black", lw=1.0)
             for p in range(len(lambdas)):
@@ -134,9 +142,13 @@ def plot(summary: dict, png: Path | None = None) -> None:
                         label = "0"
                     colour = "white" if abs(v) > 0.55 * limit else "black"
                     # halo in the cell's own colour hides the zero contour behind the digits
-                    halo = [patheffects.withStroke(linewidth=2.0, foreground=image.cmap(image.norm(v)))]
-                    ax.text(q, p, label + ("°" if includes_zero(cells[p][q]) else ""), ha="center",
-                            va="center", fontsize=6.5, color=colour, zorder=5, path_effects=halo)
+                    if includes_zero(cells[p][q]):  # 95 % interval includes zero: diagonal hatch
+                        ax.add_patch(Rectangle((q - 0.5, p - 0.5), 1, 1, fill=False, hatch="////",
+                                               edgecolor=HATCH_GREY, linewidth=0, zorder=2))
+                        hatched += 1
+                    halo = [patheffects.withStroke(linewidth=2.6, foreground=image.cmap(image.norm(v)))]
+                    ax.text(q, p, label, ha="center", va="center", fontsize=LABEL_PT, color=colour,
+                            zorder=5, path_effects=halo)
             ax.set_xticks(range(len(xs)))
             ax.set_yticks(range(len(lambdas)))
             ax.tick_params(labelsize=7)
@@ -169,7 +181,8 @@ def plot(summary: dict, png: Path | None = None) -> None:
         fig.savefig(png, dpi=200)
     w, h = fig.get_size_inches()
     print(f"wrote {OUT.relative_to(ROOT)}: {w:.2f} x {h:.2f} in; font: {font}; "
-          f"colour limit ±{limit:.2f} pp; zero contour drawn in {contour_drawn}/12 panels")
+          f"colour limit ±{limit:.2f} pp; zero contour drawn in {contour_drawn}/12 panels "
+          f"({', '.join(contour_panels)}); hatched cells: {hatched}")
     plt.close(fig)
 
 

@@ -37,7 +37,7 @@ The paper fits Track 4, Computational Intelligence: "Applications of Computation
 1. **Author block.** The paper has two authors, the student (first author) and the supervisor, whose name is written as in his earlier publications. E-mail addresses are required by the template but are not kept in this public repository: copy `authors.example.tex` to `authors.local.tex` (git-ignored), fill it in, and build `submission.tex`; the result, `submission.pdf`, is the file to upload. ORCID identifiers are optional.
 2. **Acknowledgment.** The section thanks the team member who developed the detector pipeline and the original generator. Still to add: funding, if any, and the disclosure that IEEE requires when AI-generated content is used in a paper (the IEEE policy asks for it in the acknowledgments section). The place is marked in `paper.tex`.
 3. **Similarity check.** The long version of the article is in this public repository. It has not been published, but a similarity service may index it. If the conference asks, state that the repository is the authors' own supplementary material; alternatively move the long draft out of the public tree before submission.
-4. **Repository state.** The paper says that the simulator, the calibration and all results are available at the repository URL, and that the list of surveyed studies is published with the code. This holds since the branch `LMS-35-behaviour-simulation` was merged into `main` on 16 Nov 2026. The repository still has no licence file; add one if the simulator is to be called open. The calibration parameters in `ml/ednet/calibration.json` are derived from EdNet, which is released under CC BY-NC 4.0, so a licence for the code should exclude them or repeat that condition.
+4. **Repository state.** The paper says that the simulator, the calibration and all results are available at the repository URL, and that the list of surveyed studies is published with the code. This holds since the branch `LMS-35-behaviour-simulation` was merged into `main` on 16 Nov 2026. The code is released under the MIT License (`LICENSE` in the repository root); the calibration parameters in `ml/ednet/calibration.json` are derived from EdNet and stay under CC BY-NC 4.0.
 5. **Subject areas in CMT.** Primary: Computational Intelligence (applications in education); secondary: Computer Science (testing methods and tools).
 6. **Registration fee.** According to the supervisor's message of 24 Oct 2026, the fee is covered by the supervisor when he is a co-author.
 7. **Later journal version.** The long manuscript can be submitted to a journal afterwards as an extended version; IEEE expects such a version to cite the conference paper and to contain substantial new material, which it does (sensitivity analysis, protocol variants, real-data strata, scoping survey).
@@ -63,6 +63,10 @@ For the upload version with the e-mail addresses:
 ```bash
 tectonic -X compile docs/11_paper/sist2027/submission.tex
 ```
+
+The committed `paper.pdf` and the upload version were built with pdfLaTeX (TeX Live 2026: `pdflatex`, `bibtex`, `pdflatex` twice), which gives the Times fonts of the standard IEEEtran class; Tectonic gives the same six pages with the TeX Gyre Termes clone and is enough for checking a change.
+
+The text follows the supervisor's revision of 16 Nov 2026 (cheating-type table, LEGACY column, discussion of the behavioral baseline). In `fig_dose.pdf`, hatched cells have a 95 % interval that includes zero, and the zero contour is drawn only in panels with cells above and below zero beyond their intervals.
 
 `make_refs.py` copies the cited entries from `../references.bib` into `refs.bib` (without the `note` fields, which IEEEtran would print). `make_fig_dose.py` redraws the dose figure from `ml/experiments/inflation/results/stages/fi_dose.json`. The source also compiles with pdfLaTeX, XeLaTeX or LuaLaTeX (for example on Overleaf, after uploading `paper.tex`, `refs.bib` and `fig_dose.pdf`).
 

@@ -142,3 +142,13 @@ Details: [ml/anomaly/README.md](ml/anomaly/README.md), [ml/integrity/README.md](
 ## Reference prototype
 
 EduLMS (https://github.com/Newterios/educationalLMS) is a pre-diploma LMS prototype by Kaiyrbekuly A. (Go microservices, Nginx gateway, JWT with Redis, RBAC, Kafka, MinIO, CI/CD). It serves as the architectural reference for Examory; the diploma platform is reimplemented from scratch around the event-driven design in `docs/03_architecture/`.
+
+## Licence
+
+The source code of this repository is released under the MIT License (see [LICENSE](LICENSE)).
+
+Exceptions:
+
+- Files derived from the EdNet data set (`ml/ednet/calibration.json`, `ml/ednet/calibration_report.md`, and the EdNet tables, figures and stage outputs under `ml/experiments/inflation/`) are distributed under CC BY-NC 4.0, the licence of EdNet (Choi et al., AIED 2020).
+- The documents under `docs/`, including the article in `docs/11_paper/`, are not covered by the MIT License; all rights are reserved by the authors.
+- `docs/04_uml/prototypes/assets/` contains Lucide icons under their own licence (see `Lucide-LICENSE.txt` there).
