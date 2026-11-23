@@ -14,7 +14,6 @@ from ml.experiments.inflation.data import Dataset
 from ml.experiments.inflation.pipeline import fit_frozen, make_manifest
 
 
-
 def evaluate(directory: Path, output: Path) -> None:
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     for kind, name in (("bl", "bl.csv"), ("truth", "truth.csv")):
