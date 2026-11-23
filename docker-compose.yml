@@ -41,6 +41,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:?run make dev-env}
       PGDATABASE: examory
       COURSES_DB_PASSWORD: ${COURSES_DB_PASSWORD:?run make dev-env}
+      INTEGRITY_DB_PASSWORD: ${INTEGRITY_DB_PASSWORD:?run make dev-env}
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?run make dev-env}
       QUIZZES_DB_PASSWORD: ${QUIZZES_DB_PASSWORD:?run make dev-env}
       GRADING_DB_PASSWORD: ${GRADING_DB_PASSWORD:?run make dev-env}
@@ -132,7 +133,9 @@ services:
       - kafka
 
   minio:
-    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    image: examory/minio:20241013
+    build:
+      context: ./deploy/minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: examory
@@ -143,6 +146,25 @@ services:
     volumes:
       - minio_data:/data
     security_opt: ["no-new-privileges:true"]
+
+  minio-init:
+    image: examory/minio-mc:20241008
+    build:
+      context: ./deploy/minio
+      args:
+        MODULE: mc
+        VERSION: v0.0.0-20241008093726-cf128de2cf42
+    entrypoint: ["/bin/sh", "/policies/initialize.sh"]
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run make dev-env}
+      FILES_S3_SECRET: ${FILES_S3_SECRET:?run make dev-env}
+      INTEGRITY_S3_SECRET: ${INTEGRITY_S3_SECRET:?run make dev-env}
+    volumes:
+      - ./deploy/minio:/policies:ro
+    read_only: true
+    tmpfs: ["/tmp"]
+    restart: "no"
+    depends_on: [minio]
 
   auth:
     <<: *hardened
@@ -282,6 +304,27 @@ services:
       retries: 6
       start_period: 20s
     depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
+  integrity-scorer:
+    <<: *hardened
+    image: examory/integrity-scorer:dev
+    build:
+      context: .
+      dockerfile: ml/integrity_service/Dockerfile
+    environment:
+      INTEGRITY_DATABASE_URL: "postgres://integrity_svc:${INTEGRITY_DB_PASSWORD:?run make dev-env}@postgres:5432/integrity?sslmode=disable"
+      KAFKA_BROKERS: "kafka:19092"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: "integrity_reader"
+      MINIO_SECRET_KEY: "${INTEGRITY_S3_SECRET:?run make dev-env}"
+      MINIO_TLS: "false"
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
       postgres-init:
         condition: service_completed_successfully
       kafka-init:
