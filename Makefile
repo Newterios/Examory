@@ -1,5 +1,5 @@
 # Examory developer entry points. Go modules live under services/.
-GO_MODULES := services/platform services/auth services/courses services/quizzes services/grading
+GO_MODULES := services/event-collector services/platform services/auth services/courses services/quizzes services/grading
 GOBIN ?= $(HOME)/go/bin
 PYTHON ?= python3
 MODEL_DIR := ml/service/model
@@ -58,6 +58,7 @@ anomaly-model: ## train the demo anomaly model INSIDE the scorer image (same lib
 sync-schemas: ## refresh the schema copies embedded by grading
 	cp docs/03_architecture/schemas/envelope.schema.json docs/03_architecture/schemas/risk.behavior_anomaly.v1.schema.json \
 	  services/grading/internal/adapters/schemas/
+	cp docs/03_architecture/schemas/envelope.schema.json docs/03_architecture/schemas/client.*.v1.schema.json services/event-collector/cmd/event-collector/schemas/
 
 py-test: ## anomaly scorer unit tests (needs ml/service/requirements.txt installed)
 	$(PYTHON) -m unittest discover -s ml/service/tests -v

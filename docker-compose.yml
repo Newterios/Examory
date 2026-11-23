@@ -287,6 +287,33 @@ services:
       kafka-init:
         condition: service_completed_successfully
 
+  event-collector:
+    <<: *hardened
+    image: examory/event-collector:dev
+    build:
+      context: ./services
+      dockerfile: event-collector/Dockerfile
+    environment:
+      COLLECTOR_KAFKA_BROKERS: "kafka:19092"
+      COLLECTOR_JWKS_URL: "http://auth:8080/.well-known/jwks.json"
+      COLLECTOR_QUIZZES_URL: "http://quizzes:8080"
+      COLLECTOR_REDIS_ADDR: "redis:6379"
+      COLLECTOR_REDIS_PASSWORD: "${REDIS_PASSWORD:?run make dev-env}"
+    healthcheck:
+      test: ["CMD", "/event-collector", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      auth:
+        condition: service_healthy
+      quizzes:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   gateway:
     <<: *hardened
     image: nginxinc/nginx-unprivileged:1.28-alpine
