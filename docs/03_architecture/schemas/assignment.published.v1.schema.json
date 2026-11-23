@@ -1,0 +1,11 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://examory.dev/schemas/assignment.published.v1.schema.json",
+  "title":"assignment.published v1", "$ref":"envelope.schema.json",
+  "properties":{
+    "event_type":{"const":"assignment.published"}, "version":{"const":1}, "producer":{"const":"assignments"},
+    "context":{"properties":{"course_id":{"$ref":"envelope.schema.json#/$defs/id"},"group_id":{"$ref":"envelope.schema.json#/$defs/id"}}},
+    "payload":{"type":"object","additionalProperties":false,"required":["assignment_id","due_at"],
+      "properties":{"assignment_id":{"$ref":"envelope.schema.json#/$defs/id"},"due_at":{"type":["string","null"],"format":"date-time"}}}
+  }
+}

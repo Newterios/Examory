@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/quiz.answered.v1.schema.json",
+  "title": "quiz.answered v1",
+  "description": "One event per saved answer or answer change; counting conventions in events.md §3.",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": { "const": "quiz.answered" },
+    "version": { "const": 1 },
+    "producer": { "const": "quizzes" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "question_id", "question_index", "answer_hash", "is_change", "time_since_shown_ms", "time_since_attempt_start_ms"],
+      "properties": {
+        "attempt_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "question_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "question_index": { "type": "integer", "minimum": 0, "maximum": 199 },
+        "answer_hash": { "$ref": "envelope.schema.json#/$defs/sha256_hex" },
+        "is_change": { "type": "boolean" },
+        "time_since_shown_ms": { "$ref": "envelope.schema.json#/$defs/non_negative_ms" },
+        "time_since_attempt_start_ms": { "$ref": "envelope.schema.json#/$defs/non_negative_ms" }
+      }
+    }
+  }
+}
