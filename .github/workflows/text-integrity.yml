@@ -1,0 +1,39 @@
+name: Text integrity service
+on:
+  pull_request:
+    paths:
+      - ml/integrity_service/**
+      - ml/integrity/minhash.py
+      - ml/integrity/to_risk_event.py
+      - ml/service/schema.py
+      - docs/03_architecture/schemas/**
+      - .github/workflows/text-integrity.yml
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: fixture
+          POSTGRES_USER: fixture
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fixture -d fixture"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build worker image
+        run: docker build -f ml/integrity_service/Dockerfile -t examory/integrity-test .
+      - name: Test matching, durable ingestion and outbox
+        run: |
+          docker run --rm --network host --entrypoint python \
+            -e TEST_INTEGRITY_DATABASE_URL=postgresql://fixture@127.0.0.1:5432/fixture \
+            -e SCHEMA_DIR=/app/schemas examory/integrity-test \
+            -m unittest ml.integrity_service.test_service -v
