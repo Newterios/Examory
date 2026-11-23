@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/material.viewed.v1.schema.json",
+  "title": "material.viewed v1",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": {
+      "const": "material.viewed"
+    },
+    "version": {
+      "const": 1
+    },
+    "producer": {
+      "const": "courses"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "material_id",
+        "module_id",
+        "view_duration_ms",
+        "completed"
+      ],
+      "properties": {
+        "material_id": {
+          "$ref": "envelope.schema.json#/$defs/id"
+        },
+        "module_id": {
+          "$ref": "envelope.schema.json#/$defs/id"
+        },
+        "view_duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

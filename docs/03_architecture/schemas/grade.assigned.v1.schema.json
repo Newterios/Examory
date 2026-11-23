@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/grade.assigned.v1.schema.json",
+  "$ref": "envelope.schema.json",
+  "title": "grade.assigned v1",
+  "properties": {
+    "event_type": {
+      "const": "grade.assigned"
+    },
+    "version": {
+      "const": 1
+    },
+    "producer": {
+      "const": "grading"
+    },
+    "actor": {
+      "properties": {
+        "role": {
+          "const": "teacher"
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_type",
+        "target_id",
+        "grade",
+        "max_grade",
+        "rubric_scores",
+        "graded_by"
+      ],
+      "properties": {
+        "target_type": {
+          "enum": [
+            "attempt",
+            "submission"
+          ]
+        },
+        "target_id": {
+          "$ref": "envelope.schema.json#/$defs/id"
+        },
+        "grade": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_grade": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "rubric_id": {
+          "$ref": "envelope.schema.json#/$defs/id"
+        },
+        "rubric_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rubric_scores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "criterion_id",
+              "score"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "criterion_id": {
+                "$ref": "envelope.schema.json#/$defs/id"
+              },
+              "score": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "graded_by": {
+          "$ref": "envelope.schema.json#/$defs/id"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/submission.created.v1.schema.json",
+  "$comment": "Proposal, pending review.",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": {
+      "const": "submission.created"
+    },
+    "version": {
+      "const": 1
+    },
+    "producer": {
+      "const": "assignments"
+    },
+    "actor": {
+      "properties": {
+        "role": {
+          "const": "student"
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submission_id",
+        "assignment_id",
+        "attempt",
+        "kind",
+        "language",
+        "text_ref",
+        "files",
+        "submitted_at",
+        "deadline_at"
+      ],
+      "properties": {
+        "submission_id": {
+          "$ref": "envelope.schema.json#/$defs/id"
+        },
+        "assignment_id": {
+          "$ref": "envelope.schema.json#/$defs/id"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "enum": [
+            "text",
+            "file",
+            "code"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "text_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^minio://submissions/[A-Za-z0-9_-]{1,64}/extracted\\.txt$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "file_id",
+              "name",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "file_id": {
+                "$ref": "envelope.schema.json#/$defs/id"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sha256": {
+                "$ref": "envelope.schema.json#/$defs/sha256_hex"
+              }
+            }
+          }
+        },
+        "submitted_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(Z|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(Z|[+-][0-9]{2}:[0-9]{2})$"
+        }
+      }
+    }
+  }
+}
