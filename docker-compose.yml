@@ -42,6 +42,7 @@ services:
       PGDATABASE: examory
       COURSES_DB_PASSWORD: ${COURSES_DB_PASSWORD:?run make dev-env}
       INTEGRITY_DB_PASSWORD: ${INTEGRITY_DB_PASSWORD:?run make dev-env}
+      NOTIFICATIONS_DB_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:?run make dev-env}
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?run make dev-env}
       QUIZZES_DB_PASSWORD: ${QUIZZES_DB_PASSWORD:?run make dev-env}
       GRADING_DB_PASSWORD: ${GRADING_DB_PASSWORD:?run make dev-env}
@@ -329,6 +330,33 @@ services:
     depends_on:
       minio-init:
         condition: service_completed_successfully
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
+  notifications:
+    <<: *hardened
+    image: examory/notifications:dev
+    build:
+      context: ./services
+      dockerfile: notifications/Dockerfile
+    environment:
+      NOTIFICATIONS_DATABASE_URL: "postgres://notifications_svc:${NOTIFICATIONS_DB_PASSWORD:?run make dev-env}@postgres:5432/notifications?sslmode=disable"
+      NOTIFICATIONS_KAFKA_BROKERS: "kafka:19092"
+      NOTIFICATIONS_JWKS_URL: "http://auth:8080/.well-known/jwks.json"
+      COURSES_INTERNAL_URL: "http://courses:8080"
+      COURSES_INTERNAL_TOKEN: "${COURSES_INTERNAL_TOKEN:?run make dev-env}"
+    healthcheck:
+      test: ["CMD", "/notifications", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      auth:
+        condition: service_healthy
+      courses:
+        condition: service_healthy
       postgres-init:
         condition: service_completed_successfully
       kafka-init:
