@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/file.uploaded.v1.schema.json",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": {"const": "file.uploaded"},
+    "version": {"const": 1},
+    "producer": {"const": "files"},
+    "actor": {"properties": {"role": {"const": "student"}}},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_id", "name", "size", "sha256"],
+      "properties": {
+        "file_id": {"$ref": "envelope.schema.json#/$defs/id"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 200},
+        "size": {"type": "integer", "minimum": 1, "maximum": 2097152},
+        "sha256": {"$ref": "envelope.schema.json#/$defs/sha256_hex"}
+      }
+    }
+  }
+}
