@@ -139,6 +139,47 @@ python -m unittest discover -s ml/tests -v
 
 Details: [ml/anomaly/README.md](ml/anomaly/README.md), [ml/integrity/README.md](ml/integrity/README.md). Service-specific instructions will be added to each service's README as they appear.
 
+### Platform (stage 2)
+
+Go services `auth`, `quizzes` and `grading` on the shared kit `services/platform`, plus the Python anomaly scorer `ml/service` (Go 1.26; the toolchain is fetched automatically by `go`). Secrets live in a git-ignored `.env`.
+
+```bash
+make dev-env                       # once: .env with random dev secrets (bootstrap admin password inside)
+docker compose up -d --build       # infra + auth + quizzes + Nginx gateway on http://127.0.0.1:8000
+curl -s http://127.0.0.1:8000/api/auth/.well-known/jwks.json
+
+make test                          # go test -race for platform, auth, quizzes
+make integration                   # against the compose Postgres/Redis/Kafka (needs `make infra` or the stack)
+make vet fmt vuln                  # go vet, gofmt check, govulncheck
+```
+
+Gateway routes: `/api/auth/...` → `auth` (login, refresh, logout, users, groups, JWKS), `/api/quizzes/...` → `quizzes` (quizzes, attempts, answers, submit), `/api/grading/...` → `grading` (risk signals, reviews). Events go to Kafka (`lms.users`, `lms.quizzes`; Kafka UI on `127.0.0.1:8080` if started). Details, API tables and the security model: [services/platform/README.md](services/platform/README.md), [services/auth/README.md](services/auth/README.md), [services/quizzes/README.md](services/quizzes/README.md). Event JSON Schemas: [docs/03_architecture/schemas/](docs/03_architecture/schemas/).
+
+### M4 scenario end to end (quiz → anomaly → teacher review)
+
+One command sequence (Docker; Go 1.26 only for the test):
+
+```bash
+make m4      # .env secrets (adds missing keys to an existing .env), trains the demo anomaly model in its image
+             # (ml/service/model/, SHA-256 pinned in .env), builds and starts auth, quizzes (research
+             # overlay: simulation clock on, quizzes also on 127.0.0.1:8001), grading, anomaly-scorer, gateway
+make e2e     # the M4 test: provisions users, replays 10 students, waits for risks, reviews, checks Kafka
+docker compose -f docker-compose.yml -f docker-compose.research.yml down   # stop (volumes are kept)
+```
+
+What `make e2e` walks through (and what you can do by hand through `http://127.0.0.1:8000`):
+
+1. The admin (`AUTH_BOOTSTRAP_ADMIN_*` in `.env`) creates a teacher, a `system` replay account, a group and 10 students (`/api/auth/v1/users`, `/api/auth/v1/groups`).
+2. The teacher creates, publishes and assigns a 20-question quiz (`/api/quizzes/v1/quizzes`). Each question is worth 1 point, which the frozen anomaly pipeline requires.
+3. The `system` account replays the students directly against quizzes with `X-Sim-Time` / `X-Act-As-User`, so 40 minutes of quiz activity takes seconds. Eight answer at a human pace; `fastA` and `fastB` answer every question in under a second, give identical answers and submit 0.4 s apart.
+4. `anomaly-scorer` consumes `lms.quizzes`, waits for the 5-second event-time watermark, scores with the frozen Isolation Forest and publishes `risk.behavior_anomaly` to `ai.risk`. In the recorded runs, exactly the two crafted attempts were flagged (`high`).
+5. `grading` stores the signals. The teacher lists them (`GET /api/grading/v1/risks?quiz_id=…`), opens the evidence (`GET /api/grading/v1/risks/{id}`, which returns an ETag), confirms one and dismisses the other (`POST …/review` with `If-Match` and `Idempotency-Key`). `risk.reviewed` appears on `lms.grades`.
+6. Checks: a student gets 403 on every risk route; the student's quiz result is unchanged by the review (FR-26); re-delivering the same Kafka records creates no duplicate signal, review or stored event.
+
+The simulation clock and the direct quizzes port exist only in `docker-compose.research.yml`; never use that overlay in production. The anomaly model is a pickle: build it yourself (`make anomaly-model`); see [ml/service/README.md](ml/service/README.md) and [services/grading/README.md](services/grading/README.md).
+
+Existing volumes created with the old hard-coded passwords keep those passwords; run `docker compose down -v` once (this deletes local data) or set the old values in `.env`.
+
 ## Reference prototype
 
 EduLMS (https://github.com/Newterios/educationalLMS) is a pre-diploma LMS prototype by Kaiyrbekuly A. (Go microservices, Nginx gateway, JWT with Redis, RBAC, Kafka, MinIO, CI/CD). It serves as the architectural reference for Examory; the diploma platform is reimplemented from scratch around the event-driven design in `docs/03_architecture/`.

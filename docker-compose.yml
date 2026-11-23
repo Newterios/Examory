@@ -1,47 +1,100 @@
-# Local infrastructure for Examory. Start with: docker compose up -d
-# Services of the platform will be added to this file as they appear in services/.
+# Local stack for Examory.
+#   make dev-env        # once: writes .env with random secrets
+#   make infra          # infrastructure only (for integration tests)
+#   docker compose up -d --build   # everything; API gateway on http://127.0.0.1:8000
+# Databases and brokers are bound to 127.0.0.1 only (local development).
 name: examory
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  # Lets the outbox relay finish an in-flight publish wave on shutdown.
+  stop_grace_period: 30s
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: examory
-      POSTGRES_PASSWORD: examory
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make dev-env to create .env}
       POSTGRES_DB: examory
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    security_opt: ["no-new-privileges:true"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U examory"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  # One-shot: creates per-service databases and least-privilege roles (idempotent).
+  postgres-init:
+    image: postgres:16-alpine
+    entrypoint: ["/bin/sh", "/init/init-databases.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: examory
+      PGPASSWORD: ${POSTGRES_PASSWORD:?run make dev-env}
+      PGDATABASE: examory
+      COURSES_DB_PASSWORD: ${COURSES_DB_PASSWORD:?run make dev-env}
+      INTEGRITY_DB_PASSWORD: ${INTEGRITY_DB_PASSWORD:?run make dev-env}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?run make dev-env}
+      QUIZZES_DB_PASSWORD: ${QUIZZES_DB_PASSWORD:?run make dev-env}
+      GRADING_DB_PASSWORD: ${GRADING_DB_PASSWORD:?run make dev-env}
+      ANOMALY_DB_PASSWORD: ${ANOMALY_DB_PASSWORD:?run make dev-env}
+    volumes:
+      - ./deploy/postgres/init-databases.sh:/init/init-databases.sh:ro
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   mongo:
     image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: examory
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?run make dev-env}
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
+    security_opt: ["no-new-privileges:true"]
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?run make dev-env}", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?run make dev-env}
 
   kafka:
     image: apache/kafka:3.8.0
     ports:
-      - "9092:9092"
+      - "127.0.0.1:9092:9092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      # INTERNAL for containers (kafka:19092), EXTERNAL for the host (localhost:9092).
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:19092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -49,31 +102,261 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     volumes:
       - kafka_data:/var/lib/kafka/data
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:19092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 15s
+
+  # One-shot: creates topics with the retention of events.md §2.
+  kafka-init:
+    image: apache/kafka:3.8.0
+    entrypoint: ["/bin/sh", "/init/create-topics.sh"]
+    volumes:
+      - ./deploy/kafka/create-topics.sh:/init/create-topics.sh:ro
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
     depends_on:
       - kafka
 
   minio:
-    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    image: examory/minio:20241013
+    build:
+      context: ./deploy/minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: examory
-      MINIO_ROOT_PASSWORD: examory123
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run make dev-env}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
+    security_opt: ["no-new-privileges:true"]
+
+  minio-init:
+    image: examory/minio-mc:20241008
+    build:
+      context: ./deploy/minio
+      args:
+        MODULE: mc
+        VERSION: v0.0.0-20241008093726-cf128de2cf42
+    entrypoint: ["/bin/sh", "/policies/initialize.sh"]
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run make dev-env}
+      FILES_S3_SECRET: ${FILES_S3_SECRET:?run make dev-env}
+      INTEGRITY_S3_SECRET: ${INTEGRITY_S3_SECRET:?run make dev-env}
+    volumes:
+      - ./deploy/minio:/policies:ro
+    read_only: true
+    tmpfs: ["/tmp"]
+    restart: "no"
+    depends_on: [minio]
+
+  auth:
+    <<: *hardened
+    build:
+      context: ./services
+      dockerfile: auth/Dockerfile
+    image: examory/auth:dev
+    environment:
+      AUTH_HTTP_ADDR: ":8080"
+      AUTH_DATABASE_URL: postgres://auth_svc:${AUTH_DB_PASSWORD:?run make dev-env}@postgres:5432/auth?sslmode=disable
+      AUTH_REDIS_ADDR: redis:6379
+      AUTH_REDIS_PASSWORD: ${REDIS_PASSWORD:?run make dev-env}
+      AUTH_KAFKA_BROKERS: kafka:19092
+      AUTH_JWT_SIGNING_KEY: ${AUTH_JWT_SIGNING_KEY:-}
+      AUTH_DEV_MODE: "true"
+      AUTH_BOOTSTRAP_ADMIN_EMAIL: ${AUTH_BOOTSTRAP_ADMIN_EMAIL:-}
+      AUTH_BOOTSTRAP_ADMIN_PASSWORD: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:-}
+      AUTH_TRUSTED_PROXIES: 172.16.0.0/12
+      AUTH_COOKIE_SECURE: "true"
+    healthcheck:
+      test: ["CMD", "/auth", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+
+  courses:
+    <<: *hardened
+    build:
+      context: ./services
+      dockerfile: courses/Dockerfile
+    image: examory/courses:dev
+    environment:
+      COURSES_DATABASE_URL: postgres://courses_svc:${COURSES_DB_PASSWORD:?run make dev-env}@postgres:5432/courses?sslmode=disable
+      COURSES_INTERNAL_TOKEN: ${COURSES_INTERNAL_TOKEN:?run make dev-env}
+      COURSES_KAFKA_BROKERS: kafka:19092
+      COURSES_JWKS_URL: http://auth:8080/.well-known/jwks.json
+    healthcheck:
+      test: ["CMD", "/courses", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      auth:
+        condition: service_healthy
+
+  quizzes:
+    <<: *hardened
+    build:
+      context: ./services
+      dockerfile: quizzes/Dockerfile
+    image: examory/quizzes:dev
+    environment:
+      QUIZZES_HTTP_ADDR: ":8080"
+      QUIZZES_DATABASE_URL: postgres://quizzes_svc:${QUIZZES_DB_PASSWORD:?run make dev-env}@postgres:5432/quizzes?sslmode=disable
+      QUIZZES_REDIS_ADDR: redis:6379
+      QUIZZES_REDIS_PASSWORD: ${REDIS_PASSWORD:?run make dev-env}
+      QUIZZES_KAFKA_BROKERS: kafka:19092
+      QUIZZES_JWKS_URL: http://auth:8080/.well-known/jwks.json
+      QUIZZES_TRUSTED_PROXIES: 172.16.0.0/12
+      QUIZZES_SIM_CLOCK: ${QUIZZES_SIM_CLOCK:-disabled}
+    healthcheck:
+      test: ["CMD", "/quizzes", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      auth:
+        condition: service_healthy
+
+  grading:
+    <<: *hardened
+    build:
+      context: ./services
+      dockerfile: grading/Dockerfile
+    image: examory/grading:dev
+    environment:
+      GRADING_HTTP_ADDR: ":8080"
+      GRADING_DATABASE_URL: postgres://grading_svc:${GRADING_DB_PASSWORD:?run make dev-env}@postgres:5432/grading?sslmode=disable
+      GRADING_REDIS_ADDR: redis:6379
+      GRADING_REDIS_PASSWORD: ${REDIS_PASSWORD:?run make dev-env}
+      GRADING_KAFKA_BROKERS: kafka:19092
+      GRADING_JWKS_URL: http://auth:8080/.well-known/jwks.json
+      GRADING_TRUSTED_PROXIES: 172.16.0.0/12
+    healthcheck:
+      test: ["CMD", "/grading", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      auth:
+        condition: service_healthy
+
+  # Anomaly scorer (Python). Needs a model artifact: run `make anomaly-model` first.
+  anomaly-scorer:
+    <<: *hardened
+    build:
+      context: .
+      dockerfile: ml/service/Dockerfile
+    image: examory/anomaly-scorer:dev
+    environment:
+      ANOMALY_DATABASE_URL: postgresql://anomaly_svc:${ANOMALY_DB_PASSWORD:?run make dev-env}@postgres:5432/anomaly
+      ANOMALY_KAFKA_BROKERS: kafka:19092
+      ANOMALY_MODEL_PATH: /model/model.pkl
+      ANOMALY_MODEL_SHA256: ${ANOMALY_MODEL_SHA256:-}
+      ANOMALY_LATENESS_SECONDS: "5"
+    volumes:
+      - ./ml/service/model:/model:ro
+    tmpfs:
+      - /tmp:size=64m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
+  integrity-scorer:
+    <<: *hardened
+    image: examory/integrity-scorer:dev
+    build:
+      context: .
+      dockerfile: ml/integrity_service/Dockerfile
+    environment:
+      INTEGRITY_DATABASE_URL: "postgres://integrity_svc:${INTEGRITY_DB_PASSWORD:?run make dev-env}@postgres:5432/integrity?sslmode=disable"
+      KAFKA_BROKERS: "kafka:19092"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: "integrity_reader"
+      MINIO_SECRET_KEY: "${INTEGRITY_S3_SECRET:?run make dev-env}"
+      MINIO_TLS: "false"
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
+  gateway:
+    <<: *hardened
+    image: nginxinc/nginx-unprivileged:1.28-alpine
+    ports:
+      - "127.0.0.1:8000:8080"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    tmpfs:
+      - /tmp:size=16m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/gateway/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      auth:
+        condition: service_healthy
+      courses:
+        condition: service_healthy
+      quizzes:
+        condition: service_healthy
+      grading:
+        condition: service_healthy
 
 volumes:
   postgres_data:
   mongo_data:
+  redis_data:
   kafka_data:
   minio_data:
