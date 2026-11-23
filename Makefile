@@ -1,5 +1,5 @@
 # Examory developer entry points. Go modules live under services/.
-GO_MODULES := services/platform services/auth services/quizzes services/grading
+GO_MODULES := services/platform services/auth services/courses services/quizzes services/grading
 GOBIN ?= $(HOME)/go/bin
 PYTHON ?= python3
 MODEL_DIR := ml/service/model
@@ -68,7 +68,7 @@ py-lint:
 m4: ## bring the whole M4 scenario up (secrets, model, images, stack)
 	./scripts/dev-env.sh
 	$(MAKE) anomaly-model
-	docker compose -f docker-compose.yml -f docker-compose.research.yml up -d --build --wait auth quizzes grading anomaly-scorer gateway
+	docker compose -f docker-compose.yml -f docker-compose.research.yml up -d --build --wait auth courses quizzes grading anomaly-scorer gateway
 
 e2e: ## M4 end-to-end test through the gateway (needs `make m4`, which enables the research overlay)
 	@set -a; . ./.env; set +a; cd services/grading && \

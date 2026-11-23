@@ -26,6 +26,7 @@ SQL
 }
 
 create auth auth_svc "$AUTH_DB_PASSWORD"
+create courses courses_svc "$COURSES_DB_PASSWORD"
 create quizzes quizzes_svc "$QUIZZES_DB_PASSWORD"
 create grading grading_svc "$GRADING_DB_PASSWORD"
 create anomaly anomaly_svc "$ANOMALY_DB_PASSWORD"

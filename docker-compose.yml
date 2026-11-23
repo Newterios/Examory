@@ -40,6 +40,7 @@ services:
       PGUSER: examory
       PGPASSWORD: ${POSTGRES_PASSWORD:?run make dev-env}
       PGDATABASE: examory
+      COURSES_DB_PASSWORD: ${COURSES_DB_PASSWORD:?run make dev-env}
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?run make dev-env}
       QUIZZES_DB_PASSWORD: ${QUIZZES_DB_PASSWORD:?run make dev-env}
       GRADING_DB_PASSWORD: ${GRADING_DB_PASSWORD:?run make dev-env}
@@ -174,6 +175,30 @@ services:
       kafka-init:
         condition: service_completed_successfully
 
+  courses:
+    <<: *hardened
+    build:
+      context: ./services
+      dockerfile: courses/Dockerfile
+    image: examory/courses:dev
+    environment:
+      COURSES_DATABASE_URL: postgres://courses_svc:${COURSES_DB_PASSWORD:?run make dev-env}@postgres:5432/courses?sslmode=disable
+      COURSES_INTERNAL_TOKEN: ${COURSES_INTERNAL_TOKEN:?run make dev-env}
+      COURSES_KAFKA_BROKERS: kafka:19092
+      COURSES_JWKS_URL: http://auth:8080/.well-known/jwks.json
+    healthcheck:
+      test: ["CMD", "/courses", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      auth:
+        condition: service_healthy
+
   quizzes:
     <<: *hardened
     build:
@@ -278,6 +303,8 @@ services:
       retries: 5
     depends_on:
       auth:
+        condition: service_healthy
+      courses:
         condition: service_healthy
       quizzes:
         condition: service_healthy
