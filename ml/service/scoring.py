@@ -4,7 +4,7 @@ Live platform events are written into the generator's CSV layout and passed to
 ``features.read_attempts`` as a file-like object, then ``build_features`` and
 ``train.score_model`` run with the artifact's reference and thresholds, and
 ``to_risk_event.risk_event`` builds the event (marginal-outlier explanation).
-Only the risk_id is replaced by a deterministic one.
+The wrapper sets a deterministic risk_id and adds question timing evidence to flagged events.
 
 Input contract of the frozen pipeline v1 (checked per attempt; attempts that
 violate it are recorded as not scorable instead of failing the cohort):
@@ -28,6 +28,8 @@ from typing import Any
 from ml.anomaly.features import ANSWER_KEYS, SUBMIT_KEYS, build_features, read_attempts
 from ml.anomaly.to_risk_event import risk_event
 from ml.anomaly.train import score_model
+
+from .evidence import question_evidence
 
 MODEL_KEY = "iforest"
 MODEL_NAME = "isolation-forest-v1"  # as named by ml/anomaly/to_risk_event.py
@@ -133,6 +135,9 @@ class Scorer:
         if level == "low":
             return Outcome("scored", raw, level, cohort_attempts=len(rows), excluded=excluded)
         event = risk_event(rows[index], raw, self.model, self.version)
+        event["payload"]["evidence"]["features"]["per_question"] = question_evidence(
+            attempts[index], target, self.artifact["reference"]
+        )
         event["payload"]["risk_id"] = deterministic_risk_id(self.version, target_attempt_id)
         if event["payload"]["level"] != level:  # both derive from the same thresholds
             raise AssertionError("severity mapping diverged from the frozen pipeline")

@@ -24,7 +24,7 @@ This service consumes `lms.quizzes` and stores the raw quiz events once each, in
    - Events are written in the generator CSV layout and passed to `features.read_attempts` as a file-like object, then to `build_features` with the artifact's reference and to `train.score_model` with the `iforest` model.
    - Before scoring, each attempt is checked on its own. Attempts the frozen reader rejects are excluded from the cohort; if the target is one of them, it is recorded as `not_scorable` with the reason.
 4. **Emit.**
-   - A raw score ≥ the medium threshold yields `to_risk_event.risk_event(...)`, unchanged except for the risk id. Severity is medium/high per the artifact thresholds, and the explanation is the frozen list of marginal outliers.
+   - A raw score ≥ the medium threshold yields `to_risk_event.risk_event(...)`. The service adds per-question timing observations to its evidence. The artifact thresholds determine severity, and the frozen model supplies the explanation.
    - `risk_id` is replaced by a deterministic UUIDv5 of model name, artifact version and attempt id, so re-processing can never create a second signal.
    - The event is validated against `risk.behavior_anomaly.v1.schema.json` and stored in `risk_outbox` in the same transaction that marks the attempt `flagged`. Below the threshold the attempt is marked `scored` (level `low`) and no event is published (events.md: absence of a risk is not evidence of integrity).
 5. **Publish.** Outbox rows go to `ai.risk` through an idempotent producer (acks=all), keyed by the target attempt id, and are marked once the broker acknowledges them. On a crash the same bytes, with the same `event_id`, are re-sent; grading deduplicates by `event_id` and `risk_id`.
@@ -37,6 +37,14 @@ This service consumes `lms.quizzes` and stores the raw quiz events once each, in
 - the payload keys are exactly the v1 sets. The additive `quiz.submitted.reason` field is dropped before scoring.
 
 Attempts that break these rules are recorded as `not_scorable` and never crash the batch. Event timestamps must agree with `duration_ms` to the millisecond; the quizzes service guarantees this by truncating its clock to milliseconds.
+
+### Per-question observations for teachers
+
+The scorer adds one row to `payload.evidence.features.per_question` for each question in a flagged attempt. Rows use the student's zero-based variant order. Each row reports the first saved answer's time since display, the numeric cutoff used by `fast_answer_fraction`, whether the first answer was strictly faster than that cutoff, and whether the student later changed the answer.
+
+`make anomaly-model` runs the frozen trainer once. The service packaging step uses the same verified CSV and normal training groups to compute medians of first-answer times. It stores the medians in the SHA-pinned model alongside the existing tenth-percentile cutoffs. A quiz, variant and question with at least 30 normal training observations gets an item median. All other questions use the pooled training median, including live question IDs absent from training. Existing artifacts still supply the original cutoff. For those artifacts, the row reports `reference_median_ms: null` with `reference_scope: "unavailable"`.
+
+The optional v1 field and its units are documented in [the event contract](../../docs/03_architecture/events.md#riskbehavior_anomaly). Refresh the consumer's embedded copy with `make sync-schemas` after changing the canonical schema.
 
 ## Configuration
 

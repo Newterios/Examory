@@ -273,6 +273,30 @@ Signal only; never a verdict. Published only after an offline evaluation with do
 - `synchronous_with` lists peer `attempt_id` values submitted within ±5 s in the same quiz, variant and cohort.
 - Additional feature keys may be added without a version bump; consumers ignore unknown keys.
 
+**Per-question timing (FR-42, proposal, pending review).** A behavior risk can include `evidence.features.per_question`. Each row describes one answered question in the target attempt. Rows appear in increasing order of the zero-based variant index. In this example the student saved a first answer to the third question after 690 ms and revised it later.
+
+```json
+{
+  "question_index": 2,
+  "first_answer_time_ms": 690,
+  "reference_median_ms": 4400.5,
+  "reference_scope": "item_train",
+  "fast_threshold_ms": 1200,
+  "is_fast": true,
+  "answer_changed": true
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `question_index` | Position in the student's variant, using the same index as `quiz.answered`. |
+| `first_answer_time_ms` | Milliseconds from first display to the first saved answer. Later revisions retain this original time. |
+| `reference_median_ms`, `reference_scope` | Median first-answer time among normal training attempts for this quiz, variant and question when at least 30 observations were available (`item_train`). Other items use the median of all normal training first answers (`global_train`). Older model artifacts report `null` and `unavailable`. |
+| `fast_threshold_ms`, `is_fast` | The model's normal-training 10th percentile for the item, with its global fallback. The flag is true exactly when `first_answer_time_ms < fast_threshold_ms`. |
+| `answer_changed` | True when at least one saved revision for this question has `is_change: true`. |
+
+The array is optional for v1 readers. A teacher can use it to locate a timing observation within the attempt. The existing model score and severity determine whether a risk is emitted.
+
 #### `risk.proctoring`
 
 ```json
@@ -334,6 +358,8 @@ A `grade_suggestion` is advisory; only an explicit teacher save through `grading
 - Each payload has a JSON Schema (draft 2020-12, `additionalProperties: false`) in `docs/03_architecture/schemas/` named `<event_type>.v<version>.schema.json`; `envelope.schema.json` holds the envelope and shared definitions. Stage 2 covers the events produced by `auth` and `quizzes`.
 
 ## 6. Changelog
+
+**E-07 (November 2026, proposal, pending review).** Added the optional `evidence.features.per_question` array for behavior risks. Existing v1 messages remain valid. Run `make sync-schemas` to refresh the schema embedded by `grading`.
 
 **v0.3-draft (November 2026, LMS-38 and M4, pending review)** — schemas for `risk.behavior_anomaly` and `risk.reviewed`, deterministic behavior `risk_id`, risk partition keys; JSON Schemas for the envelope and the `auth`/`quizzes` events; `lms.users` payloads; canonical `answer_hash` form for choice questions; optional `quiz.submitted.reason`; timeout `occurred_at` rule; no event for identical re-saves. All additive; payload versions stay at 1.
 
