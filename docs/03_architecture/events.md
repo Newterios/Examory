@@ -231,6 +231,8 @@ All `risk.*` events share this payload shape so the `grading` service and dashbo
 
 #### `risk.plagiarism`
 
+The E-11 schema proposal covers `submission.created` and `risk.plagiarism` at version 1. The integrity worker publishes a verified pair against its later submission. It uses the submission ID to break timestamp ties and preserves the risk ID across redelivery.
+
 ```json
 {
   "matches": [
@@ -334,6 +336,8 @@ A `grade_suggestion` is advisory; only an explicit teacher save through `grading
 - Each payload has a JSON Schema (draft 2020-12, `additionalProperties: false`) in `docs/03_architecture/schemas/` named `<event_type>.v<version>.schema.json`; `envelope.schema.json` holds the envelope and shared definitions. Stage 2 covers the events produced by `auth` and `quizzes`.
 
 ## 6. Changelog
+
+**E-11 (November 2026, proposal, pending review).** Added v1 payload schemas for `submission.created` and `risk.plagiarism` and documented how the integrity worker selects the target submission.
 
 **v0.3-draft (November 2026, LMS-38 and M4, pending review)** — schemas for `risk.behavior_anomaly` and `risk.reviewed`, deterministic behavior `risk_id`, risk partition keys; JSON Schemas for the envelope and the `auth`/`quizzes` events; `lms.users` payloads; canonical `answer_hash` form for choice questions; optional `quiz.submitted.reason`; timeout `occurred_at` rule; no event for identical re-saves. All additive; payload versions stay at 1.
 
