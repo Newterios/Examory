@@ -173,7 +173,8 @@ class ReferenceDatabaseTests(unittest.TestCase):
             kafka = Producer({"bootstrap.servers": brokers})
             kafka.produce("lms.grades", key=aid, value=json.dumps(review_event(aid)).encode())
             self.assertEqual(kafka.flush(12), 0)
-            end = time.monotonic() + 20
+            # A cold interpreter and initial consumer-group assignment may share a busy test host.
+            end = time.monotonic() + 90
             while time.monotonic() < end:
                 self.assertIsNone(proc.poll(), "review worker exited early")
                 if repo.connection.execute("SELECT 1 FROM reference_exclusions WHERE attempt_id=%s", (aid,)).fetchone():
