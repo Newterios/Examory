@@ -1,0 +1,8 @@
+# Only used by builds whose context is the repository root (ml/service/Dockerfile).
+# Allow-list: everything else (raw datasets, artifacts, .env, .git) stays out.
+*
+!ml/anomaly/*.py
+!ml/service/*.py
+!ml/service/requirements.txt
+!ml/datasets/generate_quiz_behavior.py
+!docs/03_architecture/schemas/*.json
