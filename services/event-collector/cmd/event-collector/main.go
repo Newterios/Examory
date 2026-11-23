@@ -76,6 +76,7 @@ func run() error {
 	defer redis.Close()
 	httpx.RegisterHealth(eng, log, map[string]httpx.CheckFunc{"jwks": keys.Ready, "redis": redisx.Ping(redis), "kafka": pub.Ping})
 	authority := collector.Authority{Base: quizzes, HTTP: &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
-	collector.Service{Quizzes: authority, Producer: pub, Validator: validator, Log: log}.Register(eng, httpx.Authenticate(v), ratelimit.NewRedis(redis, "events:"), 60)
+	limiter := &ratelimit.Fallback{Primary: ratelimit.NewRedis(redis, "events:"), Secondary: ratelimit.NewMemory(nil), Logger: log}
+	collector.Service{Quizzes: authority, Producer: pub, Validator: validator, Log: log}.Register(eng, httpx.Authenticate(v), limiter, 60)
 	return httpx.Serve(ctx, httpx.ServerConfig{Addr: ":8080"}, eng, log)
 }
