@@ -43,6 +43,7 @@ services:
       COURSES_DB_PASSWORD: ${COURSES_DB_PASSWORD:?run make dev-env}
       INTEGRITY_DB_PASSWORD: ${INTEGRITY_DB_PASSWORD:?run make dev-env}
       FILES_DB_PASSWORD: ${FILES_DB_PASSWORD:?run make dev-env}
+      ASSIGNMENTS_DB_PASSWORD: ${ASSIGNMENTS_DB_PASSWORD:?run make dev-env}
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?run make dev-env}
       QUIZZES_DB_PASSWORD: ${QUIZZES_DB_PASSWORD:?run make dev-env}
       GRADING_DB_PASSWORD: ${GRADING_DB_PASSWORD:?run make dev-env}
@@ -364,6 +365,37 @@ services:
       kafka-init:
         condition: service_completed_successfully
       minio-init:
+        condition: service_completed_successfully
+
+  assignments:
+    <<: *hardened
+    image: examory/assignments:dev
+    build:
+      context: ./services
+      dockerfile: assignments/Dockerfile
+    environment:
+      ASSIGNMENTS_DATABASE_URL: "postgres://assignments_svc:${ASSIGNMENTS_DB_PASSWORD:?run make dev-env}@postgres:5432/assignments?sslmode=disable"
+      ASSIGNMENTS_KAFKA_BROKERS: "kafka:19092"
+      ASSIGNMENTS_JWKS_URL: "http://auth:8080/.well-known/jwks.json"
+      FILES_INTERNAL_URL: "http://files:8080"
+      FILES_INTERNAL_TOKEN: "${FILES_INTERNAL_TOKEN:?run make dev-env}"
+      COURSES_INTERNAL_URL: "http://courses:8080"
+      COURSES_INTERNAL_TOKEN: "${COURSES_INTERNAL_TOKEN:?run make dev-env}"
+    healthcheck:
+      test: ["CMD", "/assignments", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      auth:
+        condition: service_healthy
+      courses:
+        condition: service_healthy
+      files:
+        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
         condition: service_completed_successfully
 
   gateway:

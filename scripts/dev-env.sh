@@ -8,7 +8,7 @@ umask 077
 if [ -f .env ]; then
   # Upgrade path: add keys introduced by later stages, never overwrite existing ones.
   added=""
-  for key in FILES_INTERNAL_TOKEN FILES_DB_PASSWORD INTEGRITY_S3_SECRET FILES_S3_SECRET INTEGRITY_DB_PASSWORD COURSES_DB_PASSWORD COURSES_INTERNAL_TOKEN GRADING_DB_PASSWORD ANOMALY_DB_PASSWORD; do
+  for key in ASSIGNMENTS_DB_PASSWORD FILES_INTERNAL_TOKEN FILES_DB_PASSWORD INTEGRITY_S3_SECRET FILES_S3_SECRET INTEGRITY_DB_PASSWORD COURSES_DB_PASSWORD COURSES_INTERNAL_TOKEN GRADING_DB_PASSWORD ANOMALY_DB_PASSWORD; do
     if ! grep -q "^$key=" .env; then echo "$key=$(rnd 32)" >> .env; added="$added $key"; fi
   done
   echo ".env exists; added missing keys:${added:- none}"
@@ -25,6 +25,7 @@ fi
   echo "INTEGRITY_S3_SECRET=$(rnd 32)"
   echo "FILES_DB_PASSWORD=$(rnd 32)"
   echo "FILES_INTERNAL_TOKEN=$(rnd 32)"
+  echo "ASSIGNMENTS_DB_PASSWORD=$(rnd 32)"
   echo "QUIZZES_DB_PASSWORD=$(rnd 32)"
   echo "GRADING_DB_PASSWORD=$(rnd 32)"
   echo "ANOMALY_DB_PASSWORD=$(rnd 32)"

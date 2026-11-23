@@ -27,6 +27,7 @@ SQL
 
 create integrity integrity_svc "$INTEGRITY_DB_PASSWORD"
 create files files_svc "$FILES_DB_PASSWORD"
+create assignments assignments_svc "$ASSIGNMENTS_DB_PASSWORD"
 create auth auth_svc "$AUTH_DB_PASSWORD"
 create courses courses_svc "$COURSES_DB_PASSWORD"
 create quizzes quizzes_svc "$QUIZZES_DB_PASSWORD"
