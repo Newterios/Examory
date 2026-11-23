@@ -1,4 +1,5 @@
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,7 @@ import cv2
 import numpy as np
 
 from ml.proctoring.detect import analyze, segments
+from ml.proctoring.evaluate import evaluate
 
 
 class PresenceTests(unittest.TestCase):
@@ -51,3 +53,17 @@ class PresenceTests(unittest.TestCase):
                 [{"kind": "absent", "from_ms": 0, "to_ms": 2000}],
             )
             self.assertEqual(result["risk"]["payload"]["score"], 1)
+            consent = video.with_name("consent.json")
+            consent.write_text(json.dumps(r), encoding="utf-8")
+            index = video.with_name("clips.json")
+            annotations = [{"from_ms": 250, "to_ms": 1750, "kind": "absent"}]
+            index.write_text(
+                json.dumps([{"video": video.name, "consent": consent.name, "annotations": annotations}]),
+                encoding="utf-8",
+            )
+            stats = evaluate(index)["by_kind"]
+            self.assertEqual(stats["absent"]["true_positive_ms"], 1500)
+            self.assertEqual(stats["absent"]["precision"], 0.75)
+            self.assertEqual(stats["absent"]["recall"], 1.0)
+            self.assertIsNone(stats["multiple_faces"]["precision"])
+            self.assertIsNone(stats["multiple_faces"]["recall"])
