@@ -25,8 +25,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +48,29 @@ type client struct {
 }
 
 func (c *client) do(method, path, tok string, body any, hdr map[string]string) (int, map[string]any, http.Header) {
+	c.t.Helper()
+	deadline := time.Now().Add(75 * time.Second)
+	for {
+		code, response, headers := c.doOnce(method, path, tok, body, hdr)
+		if code != http.StatusTooManyRequests {
+			return code, response, headers
+		}
+		// nginx's burst limit omits Retry-After; the service limiter gives seconds.
+		delay := 250 * time.Millisecond
+		if seconds, err := strconv.Atoi(headers.Get("Retry-After")); err == nil && seconds > 0 {
+			if seconds > 75 {
+				return code, response, headers
+			}
+			delay = time.Duration(seconds) * time.Second
+		}
+		if time.Now().Add(delay).After(deadline) {
+			return code, response, headers
+		}
+		time.Sleep(delay)
+	}
+}
+
+func (c *client) doOnce(method, path, tok string, body any, hdr map[string]string) (int, map[string]any, http.Header) {
 	c.t.Helper()
 	var rd io.Reader = http.NoBody
 	if body != nil {
@@ -79,6 +104,28 @@ func (c *client) must(want int, method, path, tok string, body any, hdr map[stri
 		c.t.Fatalf("%s %s: %d (want %d) %v", method, path, code, want, m)
 	}
 	return m
+}
+
+func TestM4ClientRetriesThrottledRequest(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		content, err := io.ReadAll(r.Body)
+		if err != nil || string(content) != `{"label":"test"}` || r.Header.Get("Idempotency-Key") != "retry-test" {
+			t.Error("request changed on retry")
+		}
+		if calls == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+	c := &client{t: t, base: server.URL, http: server.Client()}
+	c.must(201, "POST", "/users", "", map[string]string{"label": "test"}, map[string]string{"Idempotency-Key": "retry-test"})
+	if calls != 2 {
+		t.Fatalf("got %d calls; want 2", calls)
+	}
 }
 
 // rnd is a deterministic pseudo-random number in [0, n) for a label.
