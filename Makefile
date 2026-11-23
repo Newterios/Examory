@@ -1,5 +1,5 @@
 # Examory developer entry points. Go modules live under services/.
-GO_MODULES := services/platform services/auth services/courses services/quizzes services/grading
+GO_MODULES := services/files services/platform services/auth services/courses services/quizzes services/grading
 GOBIN ?= $(HOME)/go/bin
 PYTHON ?= python3
 MODEL_DIR := ml/service/model

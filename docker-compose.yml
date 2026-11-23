@@ -42,6 +42,7 @@ services:
       PGDATABASE: examory
       COURSES_DB_PASSWORD: ${COURSES_DB_PASSWORD:?run make dev-env}
       INTEGRITY_DB_PASSWORD: ${INTEGRITY_DB_PASSWORD:?run make dev-env}
+      FILES_DB_PASSWORD: ${FILES_DB_PASSWORD:?run make dev-env}
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?run make dev-env}
       QUIZZES_DB_PASSWORD: ${QUIZZES_DB_PASSWORD:?run make dev-env}
       GRADING_DB_PASSWORD: ${GRADING_DB_PASSWORD:?run make dev-env}
@@ -332,6 +333,37 @@ services:
       postgres-init:
         condition: service_completed_successfully
       kafka-init:
+        condition: service_completed_successfully
+
+  files:
+    <<: *hardened
+    image: examory/files:dev
+    build:
+      context: ./services
+      dockerfile: files/Dockerfile
+    environment:
+      FILES_DATABASE_URL: "postgres://files_svc:${FILES_DB_PASSWORD:?run make dev-env}@postgres:5432/files?sslmode=disable"
+      FILES_JWKS_URL: "http://auth:8080/.well-known/jwks.json"
+      FILES_KAFKA_BROKERS: "kafka:19092"
+      FILES_INTERNAL_TOKEN: "${FILES_INTERNAL_TOKEN:?run make dev-env}"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_PUBLIC_ENDPOINT: "${MINIO_PUBLIC_ENDPOINT:-127.0.0.1:9000}"
+      MINIO_ACCESS_KEY: "files_writer"
+      MINIO_SECRET_KEY: "${FILES_S3_SECRET:?run make dev-env}"
+      MINIO_SECURE: "false"
+    healthcheck:
+      test: ["CMD", "/files", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      auth:
+        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
         condition: service_completed_successfully
 
   gateway:
