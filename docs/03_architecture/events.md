@@ -147,6 +147,10 @@ These additions are implemented by `auth` and `quizzes` in stage 2 and validated
 
 `rubric_id` and `rubric_version` are optional (added in v0.2) and identify the immutable rubric snapshot the grade was given against.
 
+### `course.created` and `course.updated` (v1, proposal pending review)
+
+Both carry `course_id`, `status` (draft, published or archived) and a positive integer `revision`. The courses service publishes to `lms.courses`, keyed by course ID. Creating a course starts revision 1. An accepted content edit or a membership change increments the revision. Repeating a membership operation with the same effect preserves the revision.
+
 ### `material.viewed` (v1)
 
 ```json
@@ -336,6 +340,8 @@ A `grade_suggestion` is advisory; only an explicit teacher save through `grading
 ## 6. Changelog
 
 **E-13 (November 2026, proposal, pending review).** The event collector publishes the three client v1 payloads in section 3 to `lms.exams`, using the attempt ID as the partition key. Each schema accepts the documented count or duration and an optional, server-confirmed exam session. The collector uses a verified student actor and server receipt time.
+
+**E-08 (November 2026, proposal, pending review).** Introduced course revision events and the v1 schemas for course.created, course.updated and material.viewed.
 
 **v0.3-draft (November 2026, LMS-38 and M4, pending review)** — schemas for `risk.behavior_anomaly` and `risk.reviewed`, deterministic behavior `risk_id`, risk partition keys; JSON Schemas for the envelope and the `auth`/`quizzes` events; `lms.users` payloads; canonical `answer_hash` form for choice questions; optional `quiz.submitted.reason`; timeout `occurred_at` rule; no event for identical re-saves. All additive; payload versions stay at 1.
 
