@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/risk.reviewed.v1.schema.json",
+  "title": "risk.reviewed v1",
+  "description": "events.md §4: a teacher's decision on one risk signal. A review never changes a grade by itself. Only the teacher role reviews (TS §2: admins have no academic decision authority).",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": { "const": "risk.reviewed" },
+    "version": { "const": 1 },
+    "producer": { "const": "grading" },
+    "actor": {
+      "properties": { "role": { "const": "teacher" } }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk_id", "target_type", "target_id", "decision", "reviewed_by", "comment"],
+      "properties": {
+        "risk_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "target_type": { "enum": ["submission", "attempt", "exam_session", "variant"] },
+        "target_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "decision": { "enum": ["confirmed", "dismissed"] },
+        "reviewed_by": { "$ref": "envelope.schema.json#/$defs/id" },
+        "comment": { "type": "string", "maxLength": 2000 }
+      }
+    }
+  }
+}

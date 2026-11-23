@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/quiz.started.v1.schema.json",
+  "title": "quiz.started v1",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": { "const": "quiz.started" },
+    "version": { "const": 1 },
+    "producer": { "const": "quizzes" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "quiz_id", "variant_id", "question_count", "time_limit_sec", "exam_session_id"],
+      "properties": {
+        "attempt_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "quiz_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "variant_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "question_count": { "type": "integer", "minimum": 1, "maximum": 200 },
+        "time_limit_sec": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "exam_session_id": { "$ref": "envelope.schema.json#/$defs/nullable_id" }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+# ml/service (anomaly scorer) runtime dependencies, pinned.
+# The first four must equal ml/requirements.txt: the model artifact is a
+# pickle of scikit-learn/numpy objects and is only valid with the same versions.
+numpy==2.3.5
+pandas==3.0.1
+scikit-learn==1.7.2
+datasketch==1.6.5
+confluent-kafka==2.16.1
+psycopg[binary]==3.3.6
+jsonschema==4.26.0

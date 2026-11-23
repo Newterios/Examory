@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/user.logged_out.v1.schema.json",
+  "title": "user.logged_out v1",
+  "description": "Payload proposed in LMS-38. reason=token_reuse when a rotated refresh token was replayed and the session family was revoked; deactivated when an admin deactivated the account.",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": { "const": "user.logged_out" },
+    "version": { "const": 1 },
+    "producer": { "const": "auth" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "reason"],
+      "properties": {
+        "user_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "reason": { "enum": ["logout", "token_reuse", "deactivated"] }
+      }
+    }
+  }
+}
