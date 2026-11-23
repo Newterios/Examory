@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"log/slog"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ const Producer = "grading"
 
 // Service implements the use cases.
 type Service struct {
+	access    courseaccess.Checker
 	store     Store
 	validator Validator
 	clock     clock.Clock
@@ -28,8 +30,8 @@ type Service struct {
 }
 
 // New returns a Service.
-func New(store Store, v Validator, clk clock.Clock, logger *slog.Logger) *Service {
-	return &Service{store: store, validator: v, clock: clk, log: logger, newID: ids.NewV7At}
+func New(store Store, v Validator, clk clock.Clock, logger *slog.Logger, access courseaccess.Checker) *Service {
+	return &Service{access: access, store: store, validator: v, clock: clk, log: logger, newID: ids.NewV7At}
 }
 
 // Store returns the underlying store (for the consumer wiring).
@@ -155,19 +157,25 @@ func (s *Service) ListRisks(ctx context.Context, p authn.Principal, f Filter, li
 	if !canRead(p) {
 		return nil, domain.ErrForbidden
 	}
-	return s.store.ListRisks(ctx, f, limit, after)
+	if p.Role == authn.RoleAdmin {
+		return s.store.ListRisks(ctx, f, limit, after)
+	}
+	return courseaccess.Visible(ctx, limit, after, func(cursor string, n int) ([]RiskRow, error) { return s.store.ListRisks(ctx, f, n, cursor) }, func(row RiskRow) (string, string, string) { return row.Risk.ID, row.Risk.CourseID, row.Risk.GroupID }, func(course, group string) (bool, error) { return s.allowed(ctx, p, course, group) })
 }
 
 // GetRisk returns one signal with evidence, attempt summary and review.
 // Every read of evidence is audited (NFR-16).
 func (s *Service) GetRisk(ctx context.Context, p authn.Principal, id string) (*RiskRow, error) {
-	if !canRead(p) {
+	if p.Role != authn.RoleTeacher {
 		return nil, domain.ErrForbidden
 	}
 	var row *RiskRow
 	err := s.store.InTx(ctx, func(tx Tx) error {
 		r, err := tx.GetRisk(ctx, id, false)
 		if err != nil {
+			return err
+		}
+		if err = s.authorize(ctx, p, r.CourseID, r.GroupID); err != nil {
 			return err
 		}
 		row, err = s.loadRow(ctx, tx, r)
@@ -224,6 +232,9 @@ func (s *Service) Review(ctx context.Context, p authn.Principal, id, decision, c
 		}
 		r, err := tx.GetRisk(ctx, id, true)
 		if err != nil {
+			return err
+		}
+		if err = s.authorize(ctx, p, r.CourseID, r.GroupID); err != nil {
 			return err
 		}
 		if prev != nil {

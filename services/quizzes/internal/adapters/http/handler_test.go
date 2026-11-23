@@ -2,9 +2,11 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,7 +41,7 @@ func newEnv(t *testing.T, sim bool) *env {
 	signer, _ := authn.NewSigner("k1", priv, "examory-auth", "examory", 10*time.Minute, clk)
 	ver, _ := authn.NewVerifier(authn.StaticKeys{"k1": pub}, authn.VerifierConfig{Issuer: "examory-auth", Audience: "examory", Clock: clk})
 	st := apptest.NewStore()
-	svc := app.New(st, clk, logging.Discard(), app.Config{Grace: 2 * time.Second})
+	svc := app.New(st, clk, logging.Discard(), app.Config{Access: courseaccess.CheckFunc(func(context.Context, string, string, string) (bool, error) { return true, nil }), Grace: 2 * time.Second})
 	e, _ := httpx.NewEngine(httpx.EngineConfig{Logger: logging.Discard()})
 	Register(e, Deps{Service: svc, Verifier: ver, Limiter: ratelimit.NewMemory(clk), Logger: logging.Discard(), SimClock: sim,
 		Limits: RateLimits{PerIP: 10000, PerSubject: 10000, Window: time.Minute}})

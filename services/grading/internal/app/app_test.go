@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"reflect"
 	"strings"
 	"sync"
@@ -49,7 +50,7 @@ func newFx(t *testing.T) *fx {
 	}
 	st := apptest.NewStore()
 	return &fx{t: t, ctx: context.Background(), store: st, val: val,
-		svc:     app.New(st, val, clock.NewFake(t0), logging.Discard()),
+		svc:     app.New(st, val, clock.NewFake(t0), logging.Discard(), courseaccess.CheckFunc(func(context.Context, string, string, string) (bool, error) { return true, nil })),
 		teacher: authn.Principal{UserID: ids.NewV7(), Role: authn.RoleTeacher},
 		other:   authn.Principal{UserID: ids.NewV7(), Role: authn.RoleTeacher},
 		admin:   authn.Principal{UserID: ids.NewV7(), Role: authn.RoleAdmin},

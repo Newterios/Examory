@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"strings"
 	"sync"
 	"testing"
@@ -44,7 +45,7 @@ func TestStoreAgainstPostgres(t *testing.T) {
 		}
 	}
 	val, _ := schemas.Validator()
-	svc := app.New(postgres.New(pool), val, clock.System{}, logging.Discard())
+	svc := app.New(postgres.New(pool), val, clock.System{}, logging.Discard(), courseaccess.CheckFunc(func(context.Context, string, string, string) (bool, error) { return true, nil }))
 	handle := func(topic string, env events.Envelope) bool {
 		ran, err := consumer.HandleOnce(ctx, pool, "grading", env, func(ctx context.Context, tx pgx.Tx, e events.Envelope) error {
 			return svc.Ingest(ctx, postgres.Bind(tx), e, topic)

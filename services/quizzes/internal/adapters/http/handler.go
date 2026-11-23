@@ -3,6 +3,7 @@ package http
 
 import (
 	"errors"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -138,6 +139,10 @@ func (h *handler) resolveActor(c *gin.Context) {
 
 // fail maps domain errors to problem responses; unknown errors are 500.
 func (h *handler) fail(c *gin.Context, err error) {
+	if errors.Is(err, courseaccess.ErrUnavailable) {
+		httpx.Fail(c, 503, "courses_unavailable", "course membership is unavailable")
+		return
+	}
 	var de *domain.Error
 	if !errors.As(err, &de) {
 		httpx.Internal(c, h.d.Logger, err)

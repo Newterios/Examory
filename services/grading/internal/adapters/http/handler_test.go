@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,10 +35,10 @@ func setup(t *testing.T) (http.Handler, *authn.Signer, string) {
 		t.Fatal(err)
 	}
 	st := apptest.NewStore()
-	svc := app.New(st, val, clk, logging.Discard())
+	svc := app.New(st, val, clk, logging.Discard(), courseaccess.CheckFunc(func(context.Context, string, string, string) (bool, error) { return true, nil }))
 	attempt := ids.NewV7()
 	env, _ := events.New("risk.behavior_anomaly", 1, "integrity", events.Actor{UserID: "integrity", Role: "system"},
-		events.Context{CourseID: events.Ptr("c_10")}, map[string]any{
+		events.Context{CourseID: events.Ptr("c_10"), GroupID: events.Ptr("g_1")}, map[string]any{
 			"risk_id": "risk_1", "target_type": "attempt", "target_id": attempt, "score": 0.99, "level": "high",
 			"model": map[string]any{"name": "m", "version": "1"}, "explanation": "fast answers",
 			"evidence": map[string]any{"features": map[string]any{"mean_answer_time_ms": 400.0, "z_score": nil, "synchronous_with": []string{}}},
@@ -99,7 +100,10 @@ func TestRiskAPI(t *testing.T) {
 			t.Fatalf("%s accepted: %d", q, w.Code)
 		}
 	}
-	w, m = call(h, "GET", "/v1/risks/"+id, admin, nil, nil)
+	if w, _ := call(h, "GET", "/v1/risks/"+id, admin, nil, nil); w.Code != 403 {
+		t.Fatalf("admin evidence %d", w.Code)
+	}
+	w, m = call(h, "GET", "/v1/risks/"+id, teacher, nil, nil)
 	if w.Code != 200 || w.Header().Get("ETag") != `"v1"` || m["evidence"] == nil || m["target_id"] != attempt {
 		t.Fatalf("detail %d %v", w.Code, m)
 	}

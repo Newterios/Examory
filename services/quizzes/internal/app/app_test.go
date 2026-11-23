@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"strings"
 	"sync"
 	"testing"
@@ -40,7 +41,7 @@ func newFixture(t *testing.T) *fixture {
 	g1, g2 := ids.NewV7(), ids.NewV7()
 	return &fixture{
 		t: t, ctx: context.Background(), clk: clk, store: st,
-		svc:      app.New(st, clk, logging.Discard(), app.Config{Grace: 2 * time.Second}),
+		svc:      app.New(st, clk, logging.Discard(), app.Config{Access: courseaccess.CheckFunc(func(context.Context, string, string, string) (bool, error) { return true, nil }), Grace: 2 * time.Second}),
 		teacherA: authn.Principal{UserID: ids.NewV7(), Role: authn.RoleTeacher},
 		teacherB: authn.Principal{UserID: ids.NewV7(), Role: authn.RoleTeacher},
 		admin:    authn.Principal{UserID: ids.NewV7(), Role: authn.RoleAdmin},

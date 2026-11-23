@@ -9,6 +9,7 @@ import (
 // AttemptView is the student-facing attempt. It deliberately has no field
 // that could carry the marking key: options expose only id and text.
 type AttemptView struct {
+	CourseID    string         `json:"course_id"`
 	ID          string         `json:"id"`
 	QuizID      string         `json:"quiz_id"`
 	VariantID   string         `json:"variant_id"`
@@ -43,7 +44,7 @@ type OptionView struct {
 
 func studentView(at *domain.Attempt, now time.Time) *AttemptView {
 	v := &AttemptView{
-		ID: at.ID, QuizID: at.QuizID, VariantID: at.VariantID, AttemptNo: at.AttemptNo, Status: at.Status,
+		ID: at.ID, CourseID: at.CourseID, QuizID: at.QuizID, VariantID: at.VariantID, AttemptNo: at.AttemptNo, Status: at.Status,
 		StartedAt: at.StartedAt, DeadlineAt: at.DeadlineAt, FinishedAt: at.FinishedAt, ServerTime: now,
 		Questions: make([]QuestionView, 0, len(at.Questions)),
 	}

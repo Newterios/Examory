@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"log/slog"
 	"time"
 
@@ -27,6 +28,7 @@ type Actor struct {
 
 // Config tunes the service.
 type Config struct {
+	Access courseaccess.Checker
 	// Grace accepted after an attempt deadline for in-flight requests.
 	Grace time.Duration
 }
@@ -87,6 +89,9 @@ func (s *Service) CreateQuiz(ctx context.Context, a Actor, spec domain.QuizSpec)
 	if err := requireAuthor(a.Principal); err != nil {
 		return nil, err
 	}
+	if err := s.authorize(ctx, a, spec.CourseID, ""); err != nil {
+		return nil, err
+	}
 	now := s.clock.Now()
 	q, err := domain.BuildQuiz(spec, s.newID(now), a.UserID, now, s.newID)
 	if err != nil {
@@ -95,12 +100,15 @@ func (s *Service) CreateQuiz(ctx context.Context, a Actor, spec domain.QuizSpec)
 	if err := s.store.InTx(ctx, func(tx Tx) error { return tx.InsertQuiz(ctx, q) }); err != nil {
 		return nil, err
 	}
+	if err := s.authorize(ctx, a, q.CourseID, ""); err != nil {
+		return nil, err
+	}
 	return q, nil
 }
 
 // manageable loads a quiz the caller may manage; others get ErrNotFound so
 // that teachers cannot probe each other's quizzes (object-level authz).
-func manageable(ctx context.Context, tx Tx, a Actor, id string, forUpdate bool) (*domain.Quiz, error) {
+func (s *Service) manageable(ctx context.Context, tx Tx, a Actor, id string, forUpdate bool) (*domain.Quiz, error) {
 	if err := requireAuthor(a.Principal); err != nil {
 		return nil, err
 	}
@@ -118,7 +126,7 @@ func manageable(ctx context.Context, tx Tx, a Actor, id string, forUpdate bool) 
 func (s *Service) UpdateQuiz(ctx context.Context, a Actor, id string, spec domain.QuizSpec) (*domain.Quiz, error) {
 	var out *domain.Quiz
 	err := s.store.InTx(ctx, func(tx Tx) error {
-		q, err := manageable(ctx, tx, a, id, true)
+		q, err := s.manageable(ctx, tx, a, id, true)
 		if err != nil {
 			return err
 		}
@@ -126,6 +134,9 @@ func (s *Service) UpdateQuiz(ctx context.Context, a Actor, id string, spec domai
 			return domain.ErrNotDraft
 		}
 		now := s.clock.Now()
+		if err := s.authorize(ctx, a, spec.CourseID, ""); err != nil {
+			return err
+		}
 		nq, err := domain.BuildQuiz(spec, q.ID, q.OwnerID, now, s.newID)
 		if err != nil {
 			return err
@@ -144,7 +155,7 @@ func (s *Service) UpdateQuiz(ctx context.Context, a Actor, id string, spec domai
 func (s *Service) PublishQuiz(ctx context.Context, a Actor, id string) (*domain.Quiz, error) {
 	var out *domain.Quiz
 	err := s.store.InTx(ctx, func(tx Tx) error {
-		q, err := manageable(ctx, tx, a, id, true)
+		q, err := s.manageable(ctx, tx, a, id, true)
 		if err != nil {
 			return err
 		}
@@ -161,7 +172,7 @@ func (s *Service) PublishQuiz(ctx context.Context, a Actor, id string) (*domain.
 func (s *Service) GetQuizForAuthor(ctx context.Context, a Actor, id string) (*domain.Quiz, error) {
 	var out *domain.Quiz
 	err := s.store.InTx(ctx, func(tx Tx) error {
-		q, err := manageable(ctx, tx, a, id, false)
+		q, err := s.manageable(ctx, tx, a, id, false)
 		out = q
 		return err
 	})
@@ -205,6 +216,9 @@ func (s *Service) GetQuizForStudent(ctx context.Context, a Actor, id string) (*S
 		if q.Status != domain.StatusPublished {
 			return domain.ErrNotFound
 		}
+		if err = s.authorize(ctx, a, q.CourseID, a.GroupID); err != nil {
+			return err
+		}
 		asg, err := tx.GetAssignment(ctx, q.ID, a.GroupID)
 		if err != nil {
 			return err
@@ -235,7 +249,10 @@ func (s *Service) ListForAuthor(ctx context.Context, a Actor, limit int, after s
 	if a.Role == authn.RoleAdmin {
 		owner = ""
 	}
-	return s.store.ListQuizzes(ctx, owner, limit, after)
+	if a.Role == authn.RoleAdmin {
+		return s.store.ListQuizzes(ctx, owner, limit, after)
+	}
+	return courseaccess.Visible(ctx, limit, after, func(cur string, n int) ([]domain.Quiz, error) { return s.store.ListQuizzes(ctx, owner, n, cur) }, func(q domain.Quiz) (string, string, string) { return q.ID, q.CourseID, "" }, func(course, group string) (bool, error) { return s.allowed(ctx, a, course, group) })
 }
 
 // ListForStudent lists published quizzes assigned to the caller's group.
@@ -246,7 +263,7 @@ func (s *Service) ListForStudent(ctx context.Context, a Actor, limit int, after 
 	if a.GroupID == "" {
 		return nil, nil
 	}
-	return s.store.ListAssigned(ctx, a.GroupID, limit, after)
+	return courseaccess.Visible(ctx, limit, after, func(cur string, n int) ([]AssignedQuiz, error) { return s.store.ListAssigned(ctx, a.GroupID, n, cur) }, func(q AssignedQuiz) (string, string, string) { return q.Quiz.ID, q.Quiz.CourseID, a.GroupID }, func(course, group string) (bool, error) { return s.allowed(ctx, a, course, group) })
 }
 
 // Assign opens a published quiz to a group (upsert of the window).
@@ -256,12 +273,15 @@ func (s *Service) Assign(ctx context.Context, a Actor, quizID, groupID string, o
 		return nil, err
 	}
 	err := s.store.InTx(ctx, func(tx Tx) error {
-		q, err := manageable(ctx, tx, a, quizID, true)
+		q, err := s.manageable(ctx, tx, a, quizID, true)
 		if err != nil {
 			return err
 		}
 		if q.Status != domain.StatusPublished {
 			return domain.ErrNotPublished
+		}
+		if err = s.authorize(ctx, a, q.CourseID, groupID); err != nil {
+			return err
 		}
 		return tx.UpsertAssignment(ctx, asg)
 	})
@@ -275,12 +295,24 @@ func (s *Service) Assign(ctx context.Context, a Actor, quizID, groupID string, o
 func (s *Service) ListAssignments(ctx context.Context, a Actor, quizID string) ([]domain.Assignment, error) {
 	var out []domain.Assignment
 	err := s.store.InTx(ctx, func(tx Tx) error {
-		if _, err := manageable(ctx, tx, a, quizID, false); err != nil {
+		q, err := s.manageable(ctx, tx, a, quizID, false)
+		if err != nil {
 			return err
 		}
-		var err error
-		out, err = tx.ListAssignments(ctx, quizID)
-		return err
+		items, err := tx.ListAssignments(ctx, quizID)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			ok, err := s.allowed(ctx, a, q.CourseID, item.GroupID)
+			if err != nil {
+				return err
+			}
+			if ok {
+				out = append(out, item)
+			}
+		}
+		return nil
 	})
 	return out, err
 }
@@ -288,13 +320,13 @@ func (s *Service) ListAssignments(ctx context.Context, a Actor, quizID string) (
 // ListQuizAttempts lists attempts of a quiz for its author.
 func (s *Service) ListQuizAttempts(ctx context.Context, a Actor, quizID string, limit int, after string) ([]domain.Attempt, error) {
 	err := s.store.InTx(ctx, func(tx Tx) error {
-		_, err := manageable(ctx, tx, a, quizID, false)
+		_, err := s.manageable(ctx, tx, a, quizID, false)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListAttempts(ctx, quizID, limit, after)
+	return courseaccess.Visible(ctx, limit, after, func(cur string, n int) ([]domain.Attempt, error) { return s.store.ListAttempts(ctx, quizID, n, cur) }, func(at domain.Attempt) (string, string, string) { return at.ID, at.CourseID, at.GroupID }, func(course, group string) (bool, error) { return s.allowed(ctx, a, course, group) })
 }
 
 // ---- events ----
@@ -335,6 +367,9 @@ func (s *Service) StartAttempt(ctx context.Context, a Actor, quizID string) (*At
 			return domain.ErrNotFound
 		}
 		// The group comes from the token, never from the request body.
+		if err = s.authorize(ctx, a, q.CourseID, a.GroupID); err != nil {
+			return err
+		}
 		asg, err := tx.GetAssignment(ctx, q.ID, a.GroupID)
 		if err != nil {
 			return err
@@ -393,6 +428,9 @@ func (s *Service) loadOwn(ctx context.Context, tx Tx, a Actor, attemptID string)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
+	if err = s.authorize(ctx, a, at.CourseID, at.GroupID); err != nil {
+		return nil, time.Time{}, err
+	}
 	now, err := at.Effective(a.Clock)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -419,6 +457,9 @@ func (s *Service) GetAttempt(ctx context.Context, a Actor, attemptID string) (*A
 		}
 		at, err := tx.GetAttempt(ctx, attemptID, a.UserID, false)
 		if err != nil {
+			return err
+		}
+		if err = s.authorize(ctx, a, at.CourseID, at.GroupID); err != nil {
 			return err
 		}
 		now := a.Clock.Now
@@ -567,6 +608,9 @@ func (s *Service) Submit(ctx context.Context, a Actor, attemptID, key string) (*
 		}
 		at, err := tx.GetAttempt(ctx, attemptID, a.UserID, true)
 		if err != nil {
+			return err
+		}
+		if err = s.authorize(ctx, a, at.CourseID, at.GroupID); err != nil {
 			return err
 		}
 		if at.Status != domain.AttemptInProgress {

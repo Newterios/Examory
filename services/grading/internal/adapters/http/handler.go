@@ -6,6 +6,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -53,6 +54,10 @@ func Register(e *gin.Engine, d Deps) {
 type handler struct{ d Deps }
 
 func (h *handler) fail(c *gin.Context, err error) {
+	if errors.Is(err, courseaccess.ErrUnavailable) {
+		httpx.Fail(c, 503, "courses_unavailable", "course membership is unavailable")
+		return
+	}
 	var de *domain.Error
 	if !errors.As(err, &de) {
 		httpx.Internal(c, h.d.Logger, err)

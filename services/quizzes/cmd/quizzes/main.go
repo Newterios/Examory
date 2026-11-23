@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"log/slog"
 	"net"
 	"os"
@@ -132,7 +133,7 @@ func run() error {
 	defer producer.Close()
 	relay := outbox.NewRelay(pool, producer, logger, outbox.RelayConfig{PublishTimeout: 8 * time.Second})
 
-	svc := app.New(postgres.New(pool), clk, logger, app.Config{Grace: cfg.grace})
+	svc := app.New(postgres.New(pool), clk, logger, app.Config{Access: courseaccess.FromEnv(), Grace: cfg.grace})
 
 	engine, err := httpx.NewEngine(httpx.EngineConfig{TrustedProxies: cfg.trustedProxies, MaxBodyBytes: 512 << 10,
 		CORSOrigins: cfg.corsOrigins, Logger: logger})

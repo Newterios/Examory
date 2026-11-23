@@ -145,7 +145,7 @@ Integration tests create a throwaway database per test (`IT_PG_ADMIN_URL`) and c
 
 ## Known limitations
 
-- Group membership is not verified with `auth` when assigning (any UUID is accepted); teacher-to-group/course scoping (FR-3) is not modelled yet: any teacher may assign their quiz to any group. Students are protected because the group comes from their token.
+- Course membership is verified through `COURSES_INTERNAL_URL` with `COURSES_INTERNAL_TOKEN`. Authoring requires an assigned teacher; assignments and attempts also require current group enrollment. Membership outages return 503. Students read and submit only their own in-scope attempts.
 - `course_id` is an opaque string; there is no `courses` service yet.
 - One variant per quiz is generated; there is no API to define additional variants, and no question bank shared across quizzes (questions belong to one quiz).
 - Only choice questions; all-or-nothing scoring; no partial credit, no manual grading, no release workflow beyond `show_score` (FR-15 is partial).

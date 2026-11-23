@@ -26,7 +26,7 @@ Ingestion runs through `platform/consumer` (consumer group `grading`, topics `ai
 
 ## API
 
-Bearer token required. Teachers and admins read; **only teachers review**: TS §2 gives admins no academic decision authority, and FR-25 names the teacher. Students and `system` get 403 on every route and can never see a risk signal, their own included (FR-27 release is not built). Errors are RFC 9457 problems.
+Teachers see evidence and review signals in their assigned courses and enrolled groups. Administrators can list signal metadata. Students can read their own published grades. Errors follow RFC 9457.
 
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -104,7 +104,7 @@ make m4 && make e2e                            # full M4 scenario through the ga
 | FR-45 | **Partial**: behavior signals only; no variant-leak signals yet. |
 | FR-46 (should) | **Partial**: filters by review state, course and quiz. No filter by severity, group or time window. |
 | FR-19 | **Covered** for consumed events: invalid events are dead-letter logged, not applied. |
-| NFR-5 | Role checks and negative tests (student and system get 403; admin cannot review). No course-scoped authorization. |
+| NFR-5 | Course and group membership checks, student ownership checks and negative authorization tests. |
 | NFR-12 | **Covered**: dedup by `event_id` and by `risk_id`; re-delivery is tested end to end. |
 | NFR-16 | **Covered** for receipt, evidence views, reviews and rejected review attempts. There is no audit-read API. |
 

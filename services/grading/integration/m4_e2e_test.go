@@ -123,7 +123,10 @@ func TestM4Scenario(t *testing.T) {
 	}
 	mkUser("teacher", "teacher")
 	mkUser("system", "replay")
-	group := gw.must(201, "POST", "/api/auth/v1/groups", admin, map[string]any{"name": "M4-" + run, "course_id": "c_m4"}, nil)["id"].(string)
+	teacher := login("teacher."+run+"@examory.test", pw)
+	course := gw.must(201, "POST", "/api/courses/v1/courses", teacher, map[string]any{"title": "M4 " + run}, nil)["id"].(string)
+	group := gw.must(201, "POST", "/api/auth/v1/groups", admin, map[string]any{"name": "M4-" + run, "course_id": course}, nil)["id"].(string)
+	gw.must(204, "PUT", "/api/courses/v1/courses/"+course+"/groups/"+group, admin, nil, nil)
 	var students []student
 	for i := 0; i < 8; i++ {
 		students = append(students, student{name: fmt.Sprintf("normal%d", i)})
@@ -133,7 +136,7 @@ func TestM4Scenario(t *testing.T) {
 		students[i].id = mkUser("student", students[i].name)
 		gw.must(200, "PUT", "/api/auth/v1/groups/"+group+"/members/"+students[i].id, admin, nil, nil)
 	}
-	teacher := login("teacher."+run+"@examory.test", pw)
+
 	system := login("replay."+run+"@examory.test", pw)
 	fastA := login("fastA."+run+"@examory.test", pw)
 
@@ -146,7 +149,7 @@ func TestM4Scenario(t *testing.T) {
 				map[string]any{"key": "c", "text": "C"}, map[string]any{"key": "d", "text": "D"}},
 			"correct_keys": []string{[]string{"a", "b", "c", "d"}[i%4]}})
 	}
-	quiz := gw.must(201, "POST", "/api/quizzes/v1/quizzes", teacher, map[string]any{"title": "M4 quiz " + run, "course_id": "c_m4",
+	quiz := gw.must(201, "POST", "/api/quizzes/v1/quizzes", teacher, map[string]any{"title": "M4 quiz " + run, "course_id": course,
 		"time_limit_sec": 1800, "max_attempts": 1, "questions": questions}, nil)
 	quizID := quiz["id"].(string)
 	gw.must(200, "POST", "/api/quizzes/v1/quizzes/"+quizID+"/publish", teacher, nil, nil)

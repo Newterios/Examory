@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -90,7 +91,7 @@ func newStack(t *testing.T) *stack {
 		limiter = &ratelimit.Fallback{Primary: ratelimit.NewRedis(rdb, "quizzes-it:"+ids.NewV7()+":"), Secondary: ratelimit.NewMemory(nil)}
 	}
 	clk := clock.NewFake(time.Now().UTC().Truncate(time.Millisecond))
-	svc := app.New(postgres.New(pool), clk, logging.Discard(), app.Config{Grace: 2 * time.Second})
+	svc := app.New(postgres.New(pool), clk, logging.Discard(), app.Config{Access: courseaccess.CheckFunc(func(context.Context, string, string, string) (bool, error) { return true, nil }), Grace: 2 * time.Second})
 	engine, _ := httpx.NewEngine(httpx.EngineConfig{Logger: logging.Discard(), MaxBodyBytes: 512 << 10})
 	httpadapter.Register(engine, httpadapter.Deps{Service: svc, Verifier: verifier, Limiter: limiter, Logger: logging.Discard(),
 		Limits: httpadapter.RateLimits{PerIP: 100000, PerSubject: 100000, Window: time.Minute}})

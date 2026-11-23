@@ -89,15 +89,24 @@ func TestE2EThroughGateway(t *testing.T) {
 	}
 	tEmail, tPw, _ := mkUser("teacher")
 	sEmail, sPw, studentID := mkUser("student")
-	resp, grp := call("POST", "/api/auth/v1/groups", admin, map[string]any{"name": "SE-" + suffix, "course_id": "c_e2e"}, nil)
+	teacher, _, _ := login(tEmail, tPw)
+	courseResp, courseFixture := call("POST", "/api/courses/v1/courses", teacher, map[string]any{"title": "Quiz " + suffix}, nil)
+	if courseResp.StatusCode != 201 {
+		t.Fatalf("create course: %d", courseResp.StatusCode)
+	}
+	course := courseFixture["id"].(string)
+	resp, grp := call("POST", "/api/auth/v1/groups", admin, map[string]any{"name": "SE-" + suffix, "course_id": course}, nil)
 	if resp.StatusCode != 201 {
 		t.Fatalf("group %d %v", resp.StatusCode, grp)
 	}
 	groupID := grp["id"].(string)
+	if r, _ := call("PUT", "/api/courses/v1/courses/"+course+"/groups/"+groupID, admin, nil, nil); r.StatusCode != 204 {
+		t.Fatalf("enroll group: %d", r.StatusCode)
+	}
 	if resp, m := call("PUT", "/api/auth/v1/groups/"+groupID+"/members/"+studentID, admin, nil, nil); resp.StatusCode != 200 {
 		t.Fatalf("member %d %v", resp.StatusCode, m)
 	}
-	teacher, _, _ := login(tEmail, tPw)
+
 	student, me, refresh := login(sEmail, sPw)
 	if me["group_id"] != groupID {
 		t.Fatalf("student token group %v", me["group_id"])
@@ -122,7 +131,9 @@ func TestE2EThroughGateway(t *testing.T) {
 	}
 
 	// Teacher authors a quiz.
-	resp, q := call("POST", "/api/quizzes/v1/quizzes", teacher, quizBody(600), nil)
+	spec := quizBody(600)
+	spec["course_id"] = course
+	resp, q := call("POST", "/api/quizzes/v1/quizzes", teacher, spec, nil)
 	if resp.StatusCode != 201 {
 		t.Fatalf("create quiz %d %v", resp.StatusCode, q)
 	}

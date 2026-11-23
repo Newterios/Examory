@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Newterios/Examory/services/platform/courseaccess"
 	"log/slog"
 	"net"
 	"os"
@@ -119,7 +120,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	svc := app.New(postgres.New(pool), validator, clk, logger)
+	svc := app.New(postgres.New(pool), validator, clk, logger, courseaccess.FromEnv())
 
 	kcfg := kafkax.Config{Brokers: cfg.kafka, ClientID: "grading", AllowAutoTopicCreation: cfg.devMode, DeliveryTimeout: 8 * time.Second}
 	producer, err := kafkax.NewProducer(kcfg)
