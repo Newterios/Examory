@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/user.logged_in.v1.schema.json",
+  "title": "user.logged_in v1",
+  "description": "Payload proposed in LMS-38.",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": { "const": "user.logged_in" },
+    "version": { "const": 1 },
+    "producer": { "const": "auth" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "method"],
+      "properties": {
+        "user_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "method": { "enum": ["password"] }
+      }
+    }
+  }
+}
