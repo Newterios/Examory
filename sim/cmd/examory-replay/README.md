@@ -1,5 +1,7 @@
 # Replaying a simulator world
 
+On stacks with the courses service, replay creates a course as the teacher and enrolls each simulated group as the administrator. The earlier M4 gateway returns HTTP 404 for the course route and uses a run-specific course label. Session failures, authorization errors and service outages stop the replay.
+
 Run the command from `sim/` with the local Examory research stack and the bootstrap administrator's email and password in `E2E_ADMIN_EMAIL` and `E2E_ADMIN_PASSWORD`. The default origins are `http://127.0.0.1:8000` for the gateway and `http://127.0.0.1:8001` for quizzes. Set `E2E_GATEWAY_URL` or `E2E_QUIZZES_URL` to use different loopback ports. The command accepts only HTTP loopback origins and disables redirects and proxies.
 
 ```sh

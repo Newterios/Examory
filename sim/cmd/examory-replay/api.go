@@ -192,6 +192,31 @@ func sleepUntil(ctx context.Context, due time.Time) error {
 	}
 }
 
+// Older gateways return 404 for the entire courses route. A rejected or
+// unavailable course service must still stop provisioning on newer stacks.
+func (api *api) replayCourse(ctx context.Context, teacher *session, runID string) (string, bool, error) {
+	var created identified
+	var status int
+	err := provision(ctx, func() error {
+		token, err := teacher.token(ctx, api)
+		if err != nil {
+			return err
+		}
+		status, err = api.request(ctx, api.gateway, "POST", "/api/courses/v1/courses", token, obj{"title": "Replay " + runID}, nil, 201, &created)
+		return err
+	})
+	if status == http.StatusNotFound {
+		return "replay_" + runID, false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("create course: %w", err)
+	}
+	if !validID.MatchString(created.ID) {
+		return "", false, errors.New("invalid created course id")
+	}
+	return created.ID, true, nil
+}
+
 func (api *api) bootstrap(ctx context.Context, w *world, selected []action, m *manifest, email, password string) (*session, error) {
 	admin := &session{email: email, password: password}
 	if _, err := admin.token(ctx, api); err != nil {
@@ -254,7 +279,10 @@ func (api *api) bootstrap(ctx context.Context, w *world, selected []action, m *m
 	}
 	slices.Sort(users)
 	// Unique course prevents an earlier replay on the same cluster becoming a peer.
-	course := "replay_" + m.RunID
+	course, managedCourse, err := api.replayCourse(ctx, teacher, m.RunID)
+	if err != nil {
+		return nil, err
+	}
 	for i, u := range users {
 		g := enrolled[u]
 		gid, ok := m.Groups[g]
@@ -267,6 +295,11 @@ func (api *api) bootstrap(ctx context.Context, w *world, selected []action, m *m
 				return nil, errors.New("invalid created group id")
 			}
 			gid = created.ID
+			if managedCourse {
+				if err = gateway(admin, "PUT", "/api/courses/v1/courses/"+course+"/groups/"+gid, nil, 204, nil); err != nil {
+					return nil, fmt.Errorf("enroll group: %w", err)
+				}
+			}
 			m.Groups[g] = gid
 		}
 		_, id, err := createUser("student", fmt.Sprintf("student%d", i+1))

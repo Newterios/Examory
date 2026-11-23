@@ -191,6 +191,41 @@ func TestSessionRenewsThroughLogin(t *testing.T) {
 	}
 }
 
+func TestCourseProvisioningAcrossGatewayVersions(t *testing.T) {
+	const courseID = "55555555-1234-4876-8123-222222222222"
+	for _, status := range []int{201, 404, 403, 503} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "POST" || r.URL.Path != "/api/courses/v1/courses" {
+					t.Errorf("unexpected course route: %s %s", r.Method, r.URL.Path)
+				}
+				w.WriteHeader(status)
+				if status == 201 {
+					_ = json.NewEncoder(w).Encode(obj{"id": courseID})
+				}
+			}))
+			defer srv.Close()
+			endpoint := api{gateway: srv.URL, client: srv.Client()}
+			user := session{access: "fixture", renew: time.Now().Add(time.Minute)}
+			id, managed, err := endpoint.replayCourse(context.Background(), &user, "fixture")
+			switch status {
+			case 201:
+				if id != courseID || !managed || err != nil {
+					t.Fatal(id, managed, err)
+				}
+			case 404:
+				if id != "replay_fixture" || managed || err != nil {
+					t.Fatal(id, managed, err)
+				}
+			default:
+				if id != "" || managed || err == nil {
+					t.Fatal("expected a course provisioning failure")
+				}
+			}
+		})
+	}
+}
+
 func TestProvisionRetriesOnlyExplicitRejection(t *testing.T) {
 	for _, tc := range []struct {
 		response   int
