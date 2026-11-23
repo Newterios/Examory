@@ -245,6 +245,7 @@ services:
       ANOMALY_KAFKA_BROKERS: kafka:19092
       ANOMALY_MODEL_PATH: ${ANOMALY_MODEL_PATH:-/model/model.pkl}
       ANOMALY_MODEL_SHA256: ${ANOMALY_MODEL_SHA256:-}
+      ANOMALY_LIVE_REFERENCE: ${ANOMALY_LIVE_REFERENCE:-0}
       ANOMALY_LATENESS_SECONDS: "5"
     volumes:
       - ./ml/service/model:/model:ro
