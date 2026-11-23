@@ -49,7 +49,7 @@ anomaly-model: ## train the demo anomaly model INSIDE the scorer image (same lib
 	  --entrypoint sh $(ANOMALY_IMAGE) -c 'set -e; \
 	    python ml/datasets/generate_quiz_behavior.py --students $(ANOMALY_STUDENTS) --seed 42 --output /out/quiz.csv; \
 	    python -m ml.anomaly.split --csv /out/quiz.csv --seed 42 --output /out/split.json; \
-	    python -m ml.anomaly.train --csv /out/quiz.csv --manifest /out/split.json --output /out'
+	    python -m ml.service.train --csv /out/quiz.csv --manifest /out/split.json --output /out'
 	chmod 644 $(MODEL_DIR)/model.pkl
 	@sha=$$(shasum -a 256 $(MODEL_DIR)/model.pkl | cut -d' ' -f1); echo "$$sha" > $(MODEL_DIR)/model.sha256; \
 	if [ -f .env ]; then grep -v '^ANOMALY_MODEL_SHA256=' .env > .env.tmp; echo "ANOMALY_MODEL_SHA256=$$sha" >> .env.tmp; \
