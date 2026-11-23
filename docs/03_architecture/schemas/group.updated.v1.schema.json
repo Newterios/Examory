@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/group.updated.v1.schema.json",
+  "title": "group.updated v1",
+  "description": "Payload proposed in LMS-38. One event per group change; member_user_id is null for change=created.",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": { "const": "group.updated" },
+    "version": { "const": 1 },
+    "producer": { "const": "auth" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group_id", "name", "course_id", "change", "member_user_id", "member_count"],
+      "properties": {
+        "group_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "course_id": { "$ref": "envelope.schema.json#/$defs/nullable_id" },
+        "change": { "enum": ["created", "member_added", "member_removed"] },
+        "member_user_id": { "$ref": "envelope.schema.json#/$defs/nullable_id" },
+        "member_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
