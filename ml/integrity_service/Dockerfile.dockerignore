@@ -1,0 +1,14 @@
+**
+!ml/
+!ml/integrity/
+!ml/integrity/minhash.py
+!ml/integrity/to_risk_event.py
+!ml/service/
+!ml/service/schema.py
+!ml/integrity_service/
+!ml/integrity_service/*.py
+!ml/integrity_service/requirements.txt
+!docs/
+!docs/03_architecture/
+!docs/03_architecture/schemas/
+!docs/03_architecture/schemas/*.schema.json

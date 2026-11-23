@@ -1,0 +1,7 @@
+numpy==2.3.5
+datasketch==1.6.5
+confluent-kafka==2.16.1
+psycopg[binary]==3.3.6
+jsonschema==4.26.0
+minio==7.2.20
+urllib3==2.6.3
