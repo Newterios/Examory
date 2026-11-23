@@ -76,3 +76,8 @@ e2e: ## M4 end-to-end test through the gateway (needs `make m4`, which enables t
 	E2E_ADMIN_PASSWORD="$$AUTH_BOOTSTRAP_ADMIN_PASSWORD" IT_KAFKA_BROKERS=127.0.0.1:9092 \
 	IT_PG_ADMIN_URL="postgres://examory:$$POSTGRES_PASSWORD@127.0.0.1:5432/postgres?sslmode=disable" \
 	go test -count=1 -tags integration -run M4 -v ./integration/
+
+.PHONY: replay-parity replay-load
+export REPLAY_WORLD REPLAY_KEYS REPLAY_OUT REPLAY_RATE REPLAY_DURATION REPLAY_DRAIN_SECONDS
+replay-parity replay-load: ## replay a synthetic world on a running local M4 stack (see ml/replay/README.md)
+	@bash ml/replay/run.sh "$(patsubst replay-%,%,$@)" "$$REPLAY_WORLD" "$$REPLAY_KEYS" "$$REPLAY_OUT"
