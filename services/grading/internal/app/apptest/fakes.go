@@ -99,6 +99,10 @@ func (st *Store) ListRisks(_ context.Context, f app.Filter, limit int, after str
 	var out []app.RiskRow
 	for _, r := range st.s.Risks {
 		a, hasA := st.s.Attempts[r.TargetID]
+		hasA = hasA && r.TargetType == "attempt"
+		if f.Category != "" && f.Category != r.Category {
+			continue
+		}
 		if r.ID <= after || (f.Status != "" && r.Status != f.Status) || (f.CourseID != "" && r.CourseID != f.CourseID) ||
 			(f.QuizID != "" && (!hasA || a.QuizID != f.QuizID)) {
 			continue

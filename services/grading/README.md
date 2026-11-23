@@ -1,6 +1,6 @@
 # grading service
 
-Risk signals and the teacher review workflow of the M4 scenario (project_management.md §3a). `grading` consumes `risk.behavior_anomaly` from `ai.risk` and `quiz.submitted` from `lms.quizzes`, stores each signal next to the attempt it concerns, lets a teacher confirm or dismiss it with a reason, and publishes `risk.reviewed` to `lms.grades`.
+Risk signals and the teacher review workflow of the M4 scenario (project_management.md §3a). `grading` consumes `risk.behavior_anomaly` and `risk.plagiarism` from `ai.risk` and `quiz.submitted` from `lms.quizzes`, preserves each signal and its attempt or submission target, lets a teacher confirm or dismiss it with a reason, and publishes `risk.reviewed` to `lms.grades`.
 
 **Human in the loop (FR-26).** A risk signal never changes a grade, imposes a penalty, blocks a student or declares misconduct. A teacher explicitly publishes or corrects a grade through the grade endpoint. Tests verify that a review preserves the attempt, its grade and the original quiz result.
 
@@ -30,8 +30,8 @@ Teachers see evidence and review signals in their assigned courses and enrolled 
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| GET | `/v1/risks?status=&course_id=&quiz_id=&limit=&cursor=` | teacher, admin | Signals with attempt summary and review. `status` is `open\|confirmed\|dismissed`. Keyset pagination: `limit` ≤ 100; `cursor` is the last `id`, `next_cursor` is returned. No evidence in lists. |
-| GET | `/v1/risks/{id}` | teacher, admin | Signal with evidence, explanation, model, attempt summary (student, quiz, score, duration, changes), `processing_ms` (submit → signal received), review, `notice`. Response header `ETag: "v<version>"`. **Every call is audited** (`risk.evidence_viewed`). |
+| GET | `/v1/risks?category=&status=&course_id=&quiz_id=&limit=&cursor=` | teacher, admin | Signals with attempt summary and review. `status` is `open\|confirmed\|dismissed`. Keyset pagination: `limit` ≤ 100; `cursor` is the last `id`, `next_cursor` is returned. No evidence in lists. |
+| GET | `/v1/risks/{id}` | teacher | Signal with evidence, explanation, model, attempt summary (student, quiz, score, duration, changes), `processing_ms` (submit → signal received), review, `notice`. Response header `ETag: "v<version>"`. **Every call is audited** (`risk.evidence_viewed`). |
 | POST | `/v1/risks/{id}/review` | teacher | Body `{"decision":"confirmed\|dismissed","comment":"1..2000 chars"}`. Headers `If-Match: "v<version>"` (428 if missing, 412 if stale) and `Idempotency-Key` (8–128 of `[A-Za-z0-9_.:-]`). Exactly one review per risk: a second one is 409 `already_reviewed`. Replaying the same key and body returns the stored result with `Idempotent-Replayed: true`; reusing a key with a different body is 422. Writes the review, the status change, an audit record and `risk.reviewed`, all in one transaction. |
 | GET | `/healthz`, `/readyz` | — | Liveness; readiness (Postgres, Redis, JWKS). Not routed by the gateway. |
 
@@ -94,7 +94,7 @@ make m4 && make e2e                            # full M4 scenario through the ga
 
 | ID | Status |
 |---|---|
-| FR-24 | **Covered** for behavior signals: category, severity (`level`), score, explanation, evidence, `processing_ms` and review state. No per-teacher case assignment (see limitations). |
+| FR-24 | **Covered** for behavior and plagiarism signals: category, severity (`level`), score, explanation, evidence, `processing_ms` and review state. No per-teacher case assignment (see limitations). |
 | FR-25 | **Covered**: confirm/dismiss with a required reason; reviewer and timestamp recorded; `risk.reviewed` published. |
 | FR-26 | **Covered** by design and tests (independent teacher actions). |
 | FR-27 | **Not covered**: no student-visible outcomes and no clarification flow. |
@@ -102,7 +102,7 @@ make m4 && make e2e                            # full M4 scenario through the ga
 | FR-41 | Via `ml/service`: `quiz.answered` and `quiz.submitted` are consumed, and explainable `risk.behavior_anomaly` signals are returned. |
 | FR-42 | **Partial**: the evidence shown to teachers is mean answer time, z-score, synchronous peers and the explanation of marginal outliers, with no verdict. Per-question timings are not shown. |
 | FR-45 | **Partial**: behavior signals only; no variant-leak signals yet. |
-| FR-46 (should) | **Partial**: filters by review state, course and quiz. No filter by severity, group or time window. |
+| FR-46 (should) | **Partial**: filters by category, review state, course and quiz. No filter by severity, group or time window. |
 | FR-19 | **Covered** for consumed events: invalid events are dead-letter logged, not applied. |
 | NFR-5 | Course and group membership checks, student ownership checks and negative authorization tests. |
 | NFR-12 | **Covered**: dedup by `event_id` and by `risk_id`; re-delivery is tested end to end. |
@@ -134,7 +134,18 @@ make m4 && make e2e                            # full M4 scenario through the ga
 
 ## Known limitations
 
-- **No teacher↔course scoping:** there is no `courses` service yet, so any teacher can list and review any risk. The reviewer id is recorded in the audit log and in the event actor, which makes this traceable, but it is not prevented.
-- No student-facing outcome or clarification flow (FR-27); no `risk.plagiarism` or `risk.variant_leak` handling yet.
+- No student-facing outcome or clarification flow (FR-27); no `risk.variant_leak` handling yet.
 - The embedded schema copies must be refreshed with `make sync-schemas` when the docs change. A test fails on drift.
 - No metrics for consumer lag (NFR-11). Rejected events can only be inspected in the database.
+
+## Teacher grades
+
+PUT `/v1/attempts/{attempt_id}/grade` with an `Idempotency-Key` and JSON such as `{"grade":12.5,"feedback":"Method correct; rounding error"}`. The quiz maximum sets the upper bound. A teacher may optionally supply one total criterion, for example `"rubric_scores":[{"criterion_id":"total","score":12.5}]`. A new key publishes a new revision; an identical retry returns the original revision. Corrections, audit records and the `grade.assigned` outbox item commit together. A teacher can fetch newest-first revisions with GET `/v1/attempts/{attempt_id}/grade/history`. The student who owns the attempt can GET `/v1/attempts/{attempt_id}/grade`.
+
+## Membership
+
+Set `COURSES_INTERNAL_URL` and `COURSES_INTERNAL_TOKEN` in grading and quizzes. Teacher actions require a current course assignment. For group-bound resources the courses service must also confirm enrollment. Unavailable membership data returns 503. A teacher outside a signal's scope receives 404 from detail and review; scoped lists omit that signal.
+
+## Submission signals
+
+Filter the risk list with `category=plagiarism` or `category=behavior_anomaly`. The equivalent full event names are accepted. A plagiarism detail preserves `evidence.matches[].submission_id`, the similarity and source/target code-point offsets. The attempt summary is absent for submission targets. Review follows the same version and idempotency rules for either category.

@@ -15,6 +15,7 @@ import (
 
 // Filter narrows ListRisks. Empty fields do not filter.
 type Filter struct {
+	Category string
 	Status   string
 	CourseID string
 	QuizID   string

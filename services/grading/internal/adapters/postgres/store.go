@@ -103,7 +103,7 @@ func (s *Store) ListRisks(ctx context.Context, f app.Filter, limit int, after st
 		   AND ($2::text = '' OR r.status = $2::text)
 		   AND ($3::text = '' OR r.course_id = $3::text)
 		   AND ($4::text = '' OR a.quiz_id = $4::text)
-		 ORDER BY r.id LIMIT $5`, after, f.Status, f.CourseID, f.QuizID, limit)
+		 AND ($6::text='' OR r.category=$6) ORDER BY r.id LIMIT $5`, after, f.Status, f.CourseID, f.QuizID, limit, f.Category)
 	if err != nil {
 		return nil, err
 	}

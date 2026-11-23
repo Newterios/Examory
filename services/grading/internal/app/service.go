@@ -49,7 +49,7 @@ func (s *Service) Ingest(ctx context.Context, tx Tx, env events.Envelope, topic 
 	switch {
 	case env.EventType == events.TypeQuizSubmitted && topic == events.TopicQuizzes:
 		return s.ingestSubmitted(ctx, tx, env, topic)
-	case env.EventType == domain.CategoryBehaviorAnomaly && topic == events.TopicRisk:
+	case (env.EventType == domain.CategoryBehaviorAnomaly || env.EventType == "risk.plagiarism") && topic == events.TopicRisk:
 		return s.ingestRisk(ctx, tx, env, topic)
 	case strings.HasPrefix(env.EventType, "risk.") && topic == events.TopicRisk:
 		// Other risk categories are acknowledged but not stored yet.
@@ -103,6 +103,9 @@ func (s *Service) ingestRisk(ctx context.Context, tx Tx, env events.Envelope, to
 	var p domain.RiskPayload
 	if err := env.DecodePayload(&p, false); err != nil {
 		return s.reject(ctx, tx, env, topic, fmt.Errorf("decode: %w", err))
+	}
+	if (env.EventType == "risk.plagiarism" && p.TargetType != "submission") || (env.EventType == domain.CategoryBehaviorAnomaly && p.TargetType != "attempt") {
+		return s.reject(ctx, tx, env, topic, fmt.Errorf("wrong risk target"))
 	}
 	if err := p.CheckPayload(); err != nil {
 		return s.reject(ctx, tx, env, topic, err)

@@ -165,7 +165,15 @@ func (h *handler) list(c *gin.Context) {
 	if !ok {
 		return
 	}
-	f := app.Filter{Status: c.Query("status"), CourseID: c.Query("course_id"), QuizID: c.Query("quiz_id")}
+	category := c.Query("category")
+	if category == "plagiarism" || category == "behavior_anomaly" {
+		category = "risk." + category
+	}
+	if category != "" && category != "risk.plagiarism" && category != "risk.behavior_anomaly" {
+		httpx.Fail(c, 400, "invalid_parameter", "unknown risk category")
+		return
+	}
+	f := app.Filter{Category: category, Status: c.Query("status"), CourseID: c.Query("course_id"), QuizID: c.Query("quiz_id")}
 	if f.Status != "" && f.Status != domain.StatusOpen && f.Status != domain.StatusConfirmed && f.Status != domain.StatusDismissed {
 		httpx.Fail(c, http.StatusBadRequest, "invalid_parameter", "status must be open, confirmed or dismissed")
 		return
