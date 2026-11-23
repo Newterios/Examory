@@ -1,4 +1,4 @@
-# False positives in student strata
+# Normal student strata and the history-based gain rule
 
 SIM-BL 0.3.0, seed 42, 1200 students, 3 attempts each, 20 fixed questions. The cohorts are disjoint across training, validation and test.
 
@@ -18,3 +18,17 @@ Strata use simulator traits solely for reporting. Quartiles were fixed on unique
 iforest: fast and strong had the highest subgroup FPR, 12.50%, +6.45 percentage points versus all normal attempts.
 
 quantile_rules: slow had the highest subgroup FPR, 6.06%, +1.72 percentage points versus all normal attempts.
+
+## E-17. Recognising preknowledge from score gains
+
+The gain rule uses only earlier scores for the same student, quiz and variant. On normal training attempts it estimates the expected percentage-point gain by history length and prior-mean score band (width 20). Sparse bands fall back to history length, then to all normal transitions. Residuals are divided by 1.4826 × the median absolute deviation with a five-point floor. A first attempt has no comparable score and receives no flag. Simulator traits and latent practice_gain never enter the detector.
+
+The validation cutoff maximises preknowledge recall under 5% FPR among final normal attempts with history. The two original detectors retain their frozen validation thresholds. The comparison uses final test attempts and includes all labelled preknowledge positives.
+
+| Detector | TP / preknowledge | Recall | FP / normal | FPR | Cutoff |
+|---|---:|---:|---:|---:|---:|
+| iforest | 3 / 24 | 12.50% | 3 / 165 | 1.82% | 0.568868 |
+| quantile_rules | 3 / 24 | 12.50% | 7 / 165 | 4.24% | 0.994715 |
+| gain_rule | 11 / 24 | 45.83% | 6 / 165 | 3.64% | 1.5176 |
+
+The history rule's recall differed from the better baseline by +33.33 percentage points on this split. This is one synthetic world. A shift in reported scores is compatible with learning, item familiarity and random variation.

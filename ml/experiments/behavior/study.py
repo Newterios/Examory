@@ -1,4 +1,4 @@
-"""Reproduce E-16 on the SIM-BL world selected by its generation manifest."""
+"""Reproduce E-16 and E-17 on the SIM-BL world selected by its generation manifest."""
 from __future__ import annotations
 
 import argparse
@@ -6,12 +6,15 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import numpy as np
 import pandas as pd
 
 from ml.anomaly.features import build_features, file_sha256, read_attempts
-from ml.anomaly.train import score_model
+from ml.anomaly.train import choose_threshold, score_model
 from ml.experiments.inflation.data import Dataset
 from ml.experiments.inflation.pipeline import fit_frozen, make_manifest
+
+from .jump import GainRule, history
 
 
 def evaluate(directory: Path, output: Path) -> None:
@@ -30,7 +33,7 @@ def evaluate(directory: Path, output: Path) -> None:
     frame = frame.merge(truth, on=["attempt_id", "user_id"], validate="one_to_one", how="left")
     if frame[["theta", "tau", "revise"]].isna().any().any():
         raise ValueError("SIM-BL truth rows missing")
-    train, test = [frame.group_id.isin(split["groups"][p]) for p in ("train", "test")]
+    train, val, test = [frame.group_id.isin(split["groups"][p]) for p in ("train", "validation", "test")]
     normal = frame.is_anomaly == 0
     scores = {}
     cutoffs = {}
@@ -44,7 +47,7 @@ def evaluate(directory: Path, output: Path) -> None:
     slow, revise = people.tau.quantile(.25), people.revise.quantile(.75)
     strata = {"All normal": normal, "Fast and strong": (frame.tau >= fast) & (frame.theta >= strong),
               "Slow": frame.tau <= slow, "Frequent reviser": frame.revise >= revise}
-    lines = ["# False positives in student strata", "",
+    lines = ["# Normal student strata and the history-based gain rule", "",
              (f"SIM-BL {manifest['version']}, seed {dataset.seed}, {manifest['args']['students']} students, "
              f"{manifest['args']['attempts']} attempts each, {manifest['args']['questions']} fixed questions. "
              "The cohorts are disjoint across training, validation and test."), "",
@@ -73,6 +76,39 @@ def evaluate(directory: Path, output: Path) -> None:
         lines.append(f"{key}: {highest.lower()} had the highest subgroup FPR, {values[highest]:.2f}%, "
                      f"{values[highest] - values['All normal']:+.2f} percentage points versus all normal attempts.")
         lines.append("")
+    gains = history(frame)
+    scores["gain_rule"] = GainRule.fit(gains.loc[train & normal]).score(gains)
+    focal = normal | frame.anomaly_type.eq("preknowledge")
+    operating = val & focal & frame.is_final_attempt & np.isfinite(scores["gain_rule"])
+    cutoffs["gain_rule"] = choose_threshold(frame.loc[operating, "is_anomaly"].to_numpy(dtype=int),
+                                             scores["gain_rule"][operating], .05)["threshold"]
+    lines += ["## E-17. Recognising preknowledge from score gains", "",
+              ("The gain rule uses only earlier scores for the same student, quiz and variant. On normal training "
+              "attempts it estimates the expected percentage-point gain by history length and prior-mean score "
+              "band (width 20). Sparse bands fall back to history length, then to all normal transitions. "
+              "Residuals are divided by 1.4826 × the median absolute deviation with a five-point floor. "
+              "A first attempt has no comparable score and receives no flag. Simulator traits and latent "
+              "practice_gain never enter the detector."), "",
+              ("The validation cutoff maximises preknowledge recall under 5% FPR among final normal attempts "
+              "with history. The two original detectors retain their frozen validation thresholds. "
+              "The comparison uses final test attempts and includes all labelled preknowledge positives."), "",
+              "| Detector | TP / preknowledge | Recall | FP / normal | FPR | Cutoff |",
+              "|---|---:|---:|---:|---:|---:|"]
+    pos = test & frame.is_final_attempt & frame.anomaly_type.eq("preknowledge")
+    neg = test & frame.is_final_attempt & normal
+    if not pos.any() or not neg.any():
+        raise ValueError("No positive or normal final test attempts")
+    recalls = {}
+    for key, score in scores.items():
+        pred = score >= cutoffs[key]
+        tp, fp = int(pred[pos].sum()), int(pred[neg].sum())
+        recalls[key] = tp / int(pos.sum())
+        lines.append(f"| {key} | {tp} / {pos.sum()} | {100 * recalls[key]:.2f}% | {fp} / {neg.sum()} | "
+                     f"{100 * fp / neg.sum():.2f}% | {cutoffs[key]:.6g} |")
+    delta = 100 * (recalls["gain_rule"] - max(recalls["iforest"], recalls["quantile_rules"]))
+    lines += ["", (f"The history rule's recall differed from the better baseline by {delta:+.2f} percentage "
+              "points on this split. This is one synthetic world. A shift in reported scores is compatible "
+              "with learning, item familiarity and random variation."), ""]
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(lines), encoding="utf-8")
 
