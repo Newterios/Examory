@@ -81,7 +81,7 @@ class Store(Protocol):
     def finish(self, attempt_id: str, status: str, raw_score: float | None, level: str | None,
                detail: str, outbox: OutboxRow | None, event_id: str | None) -> bool: ...
     def unpublished(self, limit: int) -> list[OutboxRow]: ...
-    def mark_published(self, risk_ids: list[str]) -> None: ...
+    def mark_published(self, acknowledgements: dict[str, datetime]) -> list[float]: ...
     def ping(self) -> None: ...
 
 
@@ -168,8 +168,15 @@ class PostgresStore:
                         "ORDER BY created_at LIMIT %s", (limit,))
             return [OutboxRow(*row) for row in cur.fetchall()]
 
-    def mark_published(self, risk_ids: list[str]) -> None:
-        if not risk_ids:
-            return
+    def mark_published(self, acknowledgements: dict[str, datetime]) -> list[float]:
+        """Durably record each delivery once and return its submission-to-ack delay."""
+        if not acknowledgements:
+            return []
         with self._conn.transaction(), self._conn.cursor() as cur:
-            cur.execute("UPDATE risk_outbox SET published_at = now() WHERE risk_id = ANY(%s)", (risk_ids,))
+            cur.execute(
+                "UPDATE risk_outbox AS r SET published_at = ack.acked_at "
+                "FROM unnest(%s::text[], %s::timestamptz[]) AS ack(risk_id, acked_at), attempts AS a "
+                "WHERE r.risk_id = ack.risk_id AND r.published_at IS NULL AND a.attempt_id = r.attempt_id "
+                "RETURNING GREATEST(0, EXTRACT(EPOCH FROM (r.published_at - a.submitted_at)))",
+                (list(acknowledgements), list(acknowledgements.values())))
+            return [float(row[0]) for row in cur.fetchall()]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from confluent_kafka import Consumer, KafkaError, Message, Producer
@@ -52,21 +53,23 @@ class KafkaPublisher:
             "socket.timeout.ms": 10000,
         })
         self._timeout = timeout_s
+        self._acknowledged: dict[str, datetime] = {}
 
-    def publish(self, rows: list[OutboxRow]) -> list[str]:
-        acked: list[str] = []
-
+    def publish(self, rows: list[OutboxRow]) -> dict[str, datetime]:
         def report(err: Any, _msg: Message, risk_id: str) -> None:
             if err is None:
-                acked.append(risk_id)
+                # A callback from a previous timed-out flush can arrive while
+                # polling this batch. Keep the earliest successful report.
+                self._acknowledged.setdefault(risk_id, datetime.now(UTC))
             else:
-                log.warning("risk event delivery failed", extra={"risk_id": risk_id, "error": str(err)})
+                log.warning("risk event delivery failed")
 
         for row in rows:
             self._producer.produce(row.topic, value=row.envelope.encode("utf-8"), key=row.key.encode("utf-8"),
                                    headers={"event_type": b"risk.behavior_anomaly"},
                                    on_delivery=lambda err, msg, rid=row.risk_id: report(err, msg, rid))
         self._producer.flush(self._timeout + 2)
+        acked, self._acknowledged = self._acknowledged, {}
         return acked
 
     def close(self) -> None:

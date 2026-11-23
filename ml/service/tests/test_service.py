@@ -84,9 +84,15 @@ class FakeStore:
     def unpublished(self, limit: int) -> list[OutboxRow]:
         return [v["row"] for v in self.outbox.values() if not v["published"]][:limit]
 
-    def mark_published(self, ids: list[str]) -> None:
-        for i in ids:
-            self.outbox[i]["published"] = True
+    def mark_published(self, acknowledgements: dict[str, datetime]) -> list[float]:
+        delays = []
+        for risk_id, at in acknowledgements.items():
+            item = self.outbox[risk_id]
+            if not item["published"]:
+                submitted_at = self.attempts[item["row"].key]["submitted_at"]
+                delays.append(max(0., (at - submitted_at).total_seconds()))
+                item["published"] = True
+        return delays
 
     def ping(self) -> None:
         return None
@@ -96,9 +102,9 @@ class FakePublisher:
     def __init__(self, fail: set[str] | None = None) -> None:
         self.fail, self.sent = fail or set(), []
 
-    def publish(self, rows: list[OutboxRow]) -> list[str]:
+    def publish(self, rows: list[OutboxRow]) -> dict[str, datetime]:
         self.sent.extend(rows)
-        return [r.risk_id for r in rows if r.risk_id not in self.fail]
+        return {r.risk_id: T0 for r in rows if r.risk_id not in self.fail}
 
 
 def uuid7(at: datetime) -> str:

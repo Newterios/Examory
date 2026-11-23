@@ -12,11 +12,11 @@ import sys
 import threading
 import time
 from datetime import timedelta
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .artifact import ArtifactError, expected_sha_from_env, load_verified
 from .kafka_io import KafkaPublisher, make_consumer, record_error
+from .monitoring import PostgresReader, serve_health
 from .processor import Processor
 from .schema import EventValidator, find_dir
 from .scoring import Scorer
@@ -59,25 +59,6 @@ class Health:
             return time.monotonic() - self.last_loop < 60
 
 
-def serve_health(health: Health, port: int) -> ThreadingHTTPServer:
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            ok = self.path == "/healthz" and health.alive()
-            body = json.dumps({"status": "ok" if ok else "unavailable"}).encode()
-            self.send_response(200 if ok else 503)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *_args: object) -> None:
-            return
-
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server
-
-
 def main() -> int:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
@@ -92,7 +73,8 @@ def main() -> int:
         log.warning("ANOMALY_MODEL_SHA256 not set: the pickle artifact is loaded without an integrity pin")
     schema_dir = Path(os.environ.get("ANOMALY_SCHEMA_DIR", "")) if os.environ.get("ANOMALY_SCHEMA_DIR") else find_dir()
     validator = EventValidator(schema_dir)
-    store = PostgresStore(env("ANOMALY_DATABASE_URL"))
+    dsn = env("ANOMALY_DATABASE_URL")
+    store = PostgresStore(dsn)
     store.migrate()
     lateness = timedelta(seconds=float(os.environ.get("ANOMALY_LATENESS_SECONDS", "5")))
     processor = Processor(store, Scorer(artifact), validator, lateness)
@@ -100,7 +82,8 @@ def main() -> int:
     consumer = make_consumer(brokers, os.environ.get("ANOMALY_CONSUMER_GROUP", "anomaly-scorer"), QUIZ_TOPIC)
     publisher = KafkaPublisher(brokers)
     health = Health()
-    server = serve_health(health, int(os.environ.get("ANOMALY_HEALTH_PORT", "8081")))
+    server = serve_health(health, int(os.environ.get("ANOMALY_HEALTH_PORT", "8081")),
+                          PostgresReader(dsn), processor.metrics)
     stopping = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopping.set())
@@ -114,7 +97,7 @@ def main() -> int:
             if msg is not None:
                 err = record_error(msg)
                 if err is not None:
-                    log.warning("kafka error", extra={"error": str(err)})
+                    log.warning("kafka consumer error", extra={"error_code": err.code()})
                 else:
                     processor.handle(msg.value() or b"")
                     consumer.store_offsets(message=msg)  # after the DB commit: at-least-once
@@ -123,12 +106,16 @@ def main() -> int:
                 processor.publish(publisher)
                 last_tick = time.monotonic()
                 health.beat()
+    except Exception as exc:  # noqa: BLE001 - terminate without logging a rejected row or Kafka record
+        log.error("scorer loop failed", extra={"error_type": type(exc).__name__})
+        return 1
     finally:
         log.info("anomaly scorer stopping", extra={"stats": processor.stats.__dict__})
         consumer.close()
         publisher.close()
         store.close()
         server.shutdown()
+        server.server_close()
     return 0
 
 
