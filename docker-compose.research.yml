@@ -1,0 +1,13 @@
+# Research-replay overlay: NOT for production.
+#   docker compose -f docker-compose.yml -f docker-compose.research.yml up -d --build
+# Enables the quizzes simulation clock (system-role callers may set X-Sim-Time
+# and act as students) and exposes quizzes directly on 127.0.0.1:8001, because
+# the public gateway strips the simulation headers.
+services:
+  quizzes:
+    environment:
+      QUIZZES_SIM_CLOCK: enabled
+      QUIZZES_RATE_LIMIT_PER_IP: "100000"
+      QUIZZES_RATE_LIMIT_PER_SUBJECT: "100000"
+    ports:
+      - "127.0.0.1:8001:8080"
