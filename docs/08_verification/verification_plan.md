@@ -18,6 +18,8 @@ Purpose: define how the achievement of the project aim will be demonstrated: whi
 
 If H1 fails, the contribution of the project is the measured negative result plus the platform: explainable rules integrated end to end with teacher adjudication, which no compared LMS offers (existing_systems.md).
 
+**Status of H3 (22 Nov 2026).** H3 missed its recall targets on all five 360-document PAN-PC-11 subsets (seeds 42–46). Each test split had one to four pairs with a qualifying literal or lightly edited passage of at least 50 tokens. Candidate recall ranged from 0 to 0.3333 against the 0.95 target. After exact verification, pair recall was zero on every split against the 0.85 target. Precision was undefined because the detector returned no pairs in the H3 comparison. After indexing and query preparation, LSH retrieval and window checks took about 3–7% of the time of the exact comparison. The small denominators and exclusion of three large connected families limit conclusions about the full corpus. The [PAN report](../../ml/integrity/results.md) gives the counts, family bootstrap intervals and timings per seed.
+
 ## 1. Test levels
 
 | Level | Scope | Tooling | Runs | Gate |
@@ -69,9 +71,11 @@ The stage-1 generator injects anomalies by perturbing the same features the dete
 
 Every `must` requirement maps to one acceptance test (TS §7, AC-1…AC-12). The acceptance protocol is: two independent courses and groups, student/teacher/admin accounts, text and code submissions, quiz history sufficient for the 7-day/30-day windows, one rubric and one exam session; fixture-based ML outputs when a module is unavailable, reported as fixtures. A requirement is "verified" only when its test has been executed on a tagged version and the result is recorded in `docs/06_reports/`.
 
-## 6. Stage-1 status of this plan
+## 6. Verification status
 
 - Executed: unit tests for `ml/anomaly` and `ml/integrity`; offline evaluation of the anomaly baseline on synthetic data (`ml/anomaly/results.md`); CI builds docs and compose validity.
 - Executed 14 Nov 2026: detector-independent evaluation (§3b) with the behaviour simulator in `sim/`, timing calibrated on EdNet-KT2 (`ml/ednet/`), results in `ml/experiments/inflation/results/`.
-- Not executed yet: PAN-PC-11 run; any integration or end-to-end test (no platform code); load, security, usability checks; pilot.
+- On 22 Nov 2026 the PAN-PC-11 evaluation ran on the public corpus. See the [split sizes, thresholds and test measurements](../../ml/integrity/results.md).
+- On 22 Nov 2026 `make m4` and `make e2e` passed against PR #31 at `ac76cb6`. The scorer flagged the two crafted attempts in a ten-attempt replay. The [local test record](https://github.com/Newterios/Examory/pull/31#issuecomment-7082825043) identifies the tested revision.
+- The load, security and usability checks and the course pilot remain open.
 - What counts as done if the university does not approve video capture: FR-52 is `should` and is accepted with a fixture; consent, session lifecycle, agent allowlist signals and the alternative path for students without Windows (FR-47–FR-51, FR-53–FR-55, FR-57, FR-58) are verified with test accounts and constitute the proctoring deliverable of the MVP.

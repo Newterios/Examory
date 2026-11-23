@@ -57,23 +57,31 @@ def read_pan(root: Path) -> tuple[dict[str, Path], dict[tuple[str, str], list[di
             continue
         annotated.add(target)
         for feature in tree.iter("feature"):
-            if feature.get("name") != "plagiarism" or not feature.get("source_reference"):
+            if not feature.get("source_reference"):
                 continue
+            if feature.get("name") != "plagiarism":
+                raise ValueError(f"Unknown source-linked PAN annotation: {feature.get('name')!r}")
             source = Path(feature.attrib["source_reference"]).name
             if source not in paths:
                 raise ValueError(f"Missing annotated source {source}")
             a, n, b, m = (int(feature.attrib[k]) for k in
                           ("this_offset", "this_length", "source_offset", "source_length"))
-            if min(a, b) < 0 or min(n, m) <= 0:
-                raise ValueError("Invalid PAN span")
             properties = dict(feature.attrib)
-            language = str(properties.get("type", "")).lower()
+            kind = str(properties.get("type", "")).lower()
             obfuscation = str(properties.get("obfuscation", "unknown")).lower()
-            if "translat" in language or "translat" in obfuscation:
+            cross_language = (properties.get("this_language") and properties.get("source_language")
+                              and properties["this_language"] != properties["source_language"])
+            if "translat" in kind or "translat" in obfuscation or cross_language:
                 category = "translation"
+            elif kind == "simulated":
+                category = "simulated"
             else:
                 category = {"none": "literal", "low": "light", "high": "heavy"}.get(obfuscation, "other_or_unknown")
-            truth[(target, source)].append({"target": [a, a + n], "source": [b, b + m],
+            # One PAN case links a source to a zero-length target passage. Preserve
+            # the known positive pair and both members of its connected family.
+            localizable = min(a, b) >= 0 and min(n, m) > 0
+            truth[(target, source)].append({"target": [a, a + n] if localizable else None,
+                                            "source": [b, b + m] if localizable else None,
                                             "category": category, "properties": properties})
             left, right = find(target), find(source)
             parents[max(left, right)] = min(left, right)
@@ -130,6 +138,50 @@ def pair_metrics(predicted: set[tuple], truth: set[tuple], universe: set[tuple])
             "fpr": fp / (fp + tn) if fp + tn else None}
 
 
+def h3_pairs(gold: dict, texts: dict[str, str]) -> set[tuple[str, str]]:
+    """Qualify pairs using individual PAN target passages before looking at predictions."""
+    return {pair for pair, spans in gold.items() if any(
+        span["target"] is not None and span["source"] is not None and span["category"] in {"literal", "light"}
+        and len(tokenize(texts[pair[0]][slice(*span["target"])])) >= 50
+        for span in spans)}
+
+
+def h3_metrics(predicted: set, candidates: set, positives: set, negatives: set,
+               families: dict[str, str], seed: int) -> dict[str, Any]:
+    """Cluster bootstrap of query families, conditional on the fixed source bank and validation settings."""
+    universe = positives | negatives
+    predicted = predicted & universe
+    counts = pair_metrics(predicted, positives, universe)
+    counts["candidate_hits"] = len(candidates & positives)
+    counts["candidate_recall"] = counts["candidate_hits"] / len(positives) if positives else None
+    # A query family is a sampling unit whenever it contributes an eligible pair.
+    groups = {families[target] for target, _ in universe}
+    by_family = {family: np.zeros(4, dtype=np.int64) for family in sorted(groups)}
+    for pair in universe:
+        totals = by_family[families[pair[0]]]
+        totals[0] += pair in predicted and pair in positives
+        totals[1] += pair in predicted and pair in negatives
+        totals[2] += pair in positives
+        totals[3] += pair in candidates and pair in positives
+    n_groups = len(by_family)
+    intervals = {}
+    rng = np.random.default_rng(seed)
+    if n_groups >= 2:
+        sample = np.stack(list(by_family.values()))
+        draws = np.stack([sample[rng.integers(n_groups, size=n_groups)].sum(axis=0) for _ in range(1000)])
+        tp, fp, gold, hits = draws.T
+        for metric, numerator, denominator in [
+            ("precision", tp, tp + fp), ("recall", tp, gold),
+            ("f1", 2 * tp, tp + fp + gold), ("candidate_recall", hits, gold),
+        ]:
+            defined = denominator > 0
+            ratios = numerator[defined] / denominator[defined]
+            intervals[metric] = {"defined": int(defined.sum()),
+                                 "ci95": np.quantile(ratios, [.025, .975]).tolist() if ratios.size else None}
+    return {**counts, "query_families": n_groups, "bootstrap_replicates": 1000 if n_groups >= 2 else 0,
+            "bootstrap": intervals}
+
+
 def interval_length(intervals: list[list[int]]) -> int:
     total, end = 0, -1
     for left, right in sorted(intervals):
@@ -142,7 +194,11 @@ def span_metrics(predictions: dict[tuple, list[dict]], truth: dict[tuple, list[d
     detected = relevant = overlap = 0
     for pair in set(predictions) | set(truth):
         predicted = [span[side] for span in predictions.get(pair, [])]
-        gold = [span[side] for span in truth.get(pair, [])]
+        pair_truth = truth.get(pair, [])
+        if any(span["target"] is None or span["source"] is None for span in pair_truth):
+            # Incomplete annotation cannot score localization precision for this pair.
+            continue
+        gold = [span[side] for span in pair_truth]
         detected += interval_length(predicted)
         relevant += interval_length(gold)
         intersections = [[max(a, c), min(b, d)] for a, b in predicted for c, d in gold if max(a, c) < min(b, d)]
@@ -161,13 +217,15 @@ def cached_partition(texts: dict[str, str], keys: list[str], seed: int, mode: st
     started = time.perf_counter()
     detector = Detector(sources, seed, permutations, mode, templates)
     documents = {key: detector.prepare(key, value) for key, value in queries.items()}
+    setup_seconds = time.perf_counter() - started
+    started = time.perf_counter()
     lsh = {key: detector.retrieve(doc) for key, doc in documents.items()}
     lsh_seconds = time.perf_counter() - started
     started = time.perf_counter()
     exhaustive = {key: detector.retrieve(doc, exhaustive=True) for key, doc in documents.items()}
     return {"detector": detector, "queries": documents, "lsh": lsh, "exhaustive": exhaustive,
             "universe": set(itertools.product(queries, sources)),
-            "lsh_seconds": lsh_seconds, "exhaustive_seconds": time.perf_counter() - started,
+            "setup_seconds": setup_seconds, "lsh_seconds": lsh_seconds, "exhaustive_seconds": time.perf_counter() - started,
             "coverage": sum(bool(doc.windows) for doc in documents.values()) / len(documents)}
 
 
@@ -215,16 +273,32 @@ def constructed_checks(source_id: str, source_text: str, config: dict[str, Any],
 
 def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     started = time.perf_counter()
-    tracemalloc.start()
+    trace_memory = not getattr(args, "no_tracemalloc", False)
+    if trace_memory:
+        tracemalloc.start()
     paths, all_truth, families = read_pan(args.corpus)
     splits, manifest = subset_split(paths, all_truth, families, args.max_documents, args.seed)
     selected = {key for partition in splits.values() for key in partition}
     # Keep exact source bytes for checksums, newline characters for PAN offsets.
     texts = {key: paths[key].read_bytes().decode("utf-8-sig") for key in selected}
     truth = {pair: spans for pair, spans in all_truth.items() if set(pair) <= selected}
+    manifest["corpus_nonpositive_or_negative_coordinate_annotations"] = sum(
+        span["target"] is None for spans in all_truth.values() for span in spans)
+    selected_out_of_bounds = 0
     for (target, source), spans in truth.items():
-        if any(s["target"][1] > len(texts[target]) or s["source"][1] > len(texts[source]) for s in spans):
-            raise ValueError("PAN offsets exceed decoded text; check corpus encoding/version")
+        for span in spans:
+            if span["target"] is None:
+                continue
+            oversized = [(key, span[side][1]) for side, key in (("target", target), ("source", source))
+                         if span[side][1] > len(texts[key])]
+            if oversized:
+                for key, end in oversized:
+                    if end <= len(texts[key].encode("utf-16-le")) // 2:
+                        raise ValueError(f"PAN end {end} exceeds Unicode code points in {key} but fits UTF-16; "
+                                         "resolve the corpus offset convention before evaluation")
+                selected_out_of_bounds += 1
+                span["target"] = span["source"] = None
+    manifest["selected_out_of_bounds_annotations"] = selected_out_of_bounds
     templates = json.loads(args.templates.read_text(encoding="utf-8")) if args.templates else []
     vectorizer = TfidfVectorizer(tokenizer=words, token_pattern=None, lowercase=False, sublinear_tf=True)
     vectorizer.fit([texts[key] for key in splits["train"]])
@@ -235,12 +309,15 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     if any(not values for values in gold.values()):
         raise ValueError("Validation/test need positive pairs; enlarge the subset")
     results, configurations, grid = [], {}, {}
+    frozen_predictions, raw_candidates = {}, {}
     for method in ("lsh", "exhaustive"):
         threshold, minimum, rows = tune(caches["validation"], set(gold["validation"]), method)
         configurations[method] = {"threshold": threshold, "min_span": minimum}
         grid[method] = rows
         predicted = predictions(caches["test"], method, threshold, minimum)
         candidates = {(query, source) for query, sources in caches["test"][method].items() for source in sources}
+        frozen_predictions[method] = set(predicted)
+        raw_candidates[method] = candidates
         row = {"method": method, **pair_metrics(set(predicted), set(gold["test"]), caches["test"]["universe"]),
                "candidate_recall": len(candidates & set(gold["test"])) / len(gold["test"]),
                "coverage": caches["test"]["coverage"],
@@ -269,10 +346,18 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     results.append({"method": "tfidf_cosine", **pair_metrics(cosine_predictions, set(gold["test"]), caches["test"]["universe"]),
                     "candidate_recall": 1.0, "coverage": None})
     breakdown = []
-    methods = {"lsh": set(predictions(caches["test"], "lsh", **config)),
-               "exhaustive_lsh_settings": set(exact_same), "tfidf_cosine": cosine_predictions}
+    methods = {**frozen_predictions, "exhaustive_lsh_settings": set(exact_same), "tfidf_cosine": cosine_predictions}
     negatives = caches["test"]["universe"] - set(gold["test"])
-    for category in ("literal", "light", "heavy", "translation", "other_or_unknown"):
+    eligible = h3_pairs(gold["test"], texts)
+    raw_candidates["exhaustive_lsh_settings"] = raw_candidates["exhaustive"]
+    raw_candidates["tfidf_cosine"] = caches["test"]["universe"]
+    h3 = {method: h3_metrics(predicted, raw_candidates[method], eligible, negatives, families, args.seed)
+          for method, predicted in methods.items()}
+    manifest["test_positive_families"] = len({families[t] for t, _ in gold["test"]})
+    manifest["test_h3_positive_families"] = len({families[t] for t, _ in eligible})
+    manifest["test_pairs_with_incomplete_localization"] = sum(
+        any(span["target"] is None for span in spans) for spans in gold["test"].values())
+    for category in ("literal", "light", "heavy", "translation", "simulated", "other_or_unknown"):
         positives = {pair for pair, spans in gold["test"].items() if any(s["category"] == category for s in spans)}
         universe = negatives | positives
         for name, predicted in methods.items():
@@ -285,8 +370,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     example_source = min(caches["test"]["detector"].sources)
     constructed = constructed_checks(example_source, texts[example_source], config,
                                      args.seed, args.mode, args.num_perm)
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    peak = None
+    if trace_memory:
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
     artifact = {"version": "0.1.0", "seed": args.seed, "mode": args.mode, "num_perm": args.num_perm,
                 "environment": {"python": platform.python_version(), "platform": platform.platform(),
                                 "processor": platform.processor(),
@@ -296,9 +383,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                                                   for p in sorted(Path(__file__).parent.glob("*.py"))}},
                 "templates": templates, "configurations": configurations,
                 "levels": {"medium": medium, "high": high}, "validation_grid": grid,
-                "test": results, "breakdown": breakdown, "constructed_checks": constructed, "manifest": manifest,
+                "test": results, "h3": h3, "breakdown": breakdown, "constructed_checks": constructed, "manifest": manifest,
                 "seconds": time.perf_counter() - started, "python_peak_bytes": peak,
-                "timings": {k: {n: c[n] for n in ("lsh_seconds", "exhaustive_seconds")} for k, c in caches.items()}}
+                "timings": {k: {n: c[n] for n in ("setup_seconds", "lsh_seconds", "exhaustive_seconds")} for k, c in caches.items()}}
     args.artifacts.mkdir(parents=True, exist_ok=True)
     (args.artifacts / "experiment.json").write_text(json.dumps(artifact, indent=2, allow_nan=False), encoding="utf-8")
     lines = ["<!-- ml/integrity/results.md -->", "# PAN-PC-11 closed-family subset results", "",
@@ -309,6 +396,44 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         return "NA" if value is None else f"{value:.4f}" if isinstance(value, float) else str(value)
     columns = ("method", "pairs", "positives", "tp", "fp", "fn", "tn", "candidate_recall", "precision", "recall", "f1", "fpr")
     lines += ["| " + " | ".join(cell(row[k]) for k in columns) + " |" for row in results]
+    lines += ["", "Corpus annotations with a negative offset or nonpositive length: "
+              + str(manifest["corpus_nonpositive_or_negative_coordinate_annotations"]) + ". "
+              + f"Additional out-of-bounds annotations in the selected documents: {selected_out_of_bounds}. "
+              + f"Test pairs excluded from localization metrics: {manifest['test_pairs_with_incomplete_localization']}. "
+              + "A known source link still counts as a positive pair even if its passage cannot be localized. "
+              + "Only spans valid on both sides qualify a pair for H3."]
+    lines += ["", "## H3: literal or lightly edited reuse of at least 50 tokens", "",
+              ("A positive pair contains at least one literal or light PAN target span with 50 or more normalized tokens. "
+              "Other annotated positive pairs are excluded from this comparison. All held-out negative pairs remain. "
+              "A hit is a correct document pair. Span localization is reported separately."),
+              "", (f"Test positive families: {manifest['test_positive_families']}. Families with qualifying H3 pairs: "
+              f"{manifest['test_h3_positive_families']}. Oversized families excluded before selection: "
+              f"{manifest['oversized_families_excluded']}."), "",
+              "| Method | TP | FP | FN | TN | Candidates retrieved / gold | Candidate recall | Precision | Recall | F1 |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for method, row in h3.items():
+        lines.append("| " + " | ".join(map(str, (
+            method, row["tp"], row["fp"], row["fn"], row["tn"], f"{row['candidate_hits']}/{row['positives']}",
+            *(cell(row[k]) for k in ("candidate_recall", "precision", "recall", "f1"))))) + " |")
+    lines += ["", ("Percentile 95% intervals resample whole query families against the fixed test source bank, "
+              "using the frozen validation settings. Parentheses show defined replicates out of 1,000. "
+              "Fewer than two eligible query families gives no interval."), "",
+              "| Method | Candidate recall | Precision | Recall | F1 |", "|---|---|---|---|---|"]
+    for method, row in h3.items():
+        bounds = []
+        for k in ("candidate_recall", "precision", "recall", "f1"):
+            ci = row["bootstrap"].get(k)
+            if ci and ci["ci95"] is not None:
+                lo, hi = ci["ci95"]
+                bounds.append(f"[{lo:.4f}, {hi:.4f}] ({ci['defined']}/1000)")
+            else:
+                bounds.append("NA")
+        lines.append("| " + " | ".join([method, *bounds]) + " |")
+    times = caches["test"]
+    lines += ["", (f"Test reference indexing and query preparation: {times['setup_seconds']:.3f} s. "
+              f"On the prepared documents, LSH retrieval and exact window checks took {times['lsh_seconds']:.3f} s. "
+              f"Exhaustive retrieval and exact window checks took {times['exhaustive_seconds']:.3f} s. "
+              "Both timings exclude validation tuning and final evidence merging.")]
     lines += ["", "## Validation-selected settings", "", "```json", json.dumps(configurations, indent=2), "```",
               "", "## Annotation categories (pairs can belong to multiple categories)", "",
               "| Method | Category | Positive pairs | Precision | Recall | F1 |", "|---|---|---:|---:|---:|---:|"]
@@ -323,7 +448,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
               "| Case | Pairs | Flagged | False positives under construction assumption |", "|---|---:|---:|---:|"]
     lines += [f"| {row['case']} | 1 | {row['flagged']} | {row['false_positive_under_assumption']} |" for row in constructed]
     lines += ["", f"Query coverage (>=5 non-template tokens): {caches['test']['coverage']:.4f}.",
-              f"Total wall time: {artifact['seconds']:.2f} s; Python-tracked peak: {peak} bytes (not total RSS).",
+              f"Total wall time: {artifact['seconds']:.2f} s. " +
+              (f"Python-tracked peak: {peak} bytes (not total RSS)." if trace_memory else "Python allocation peak was not measured."),
               "TF-IDF vocabulary/IDF fit only on train; exhaustive comparisons use identical held-out pairs.",
               "Span metrics are not official PAN plagdet/granularity. Missed candidates count as false negatives.",
               "The three constructed stress cases assume attributed quotation/provided templates are legitimate. They are not independently adjudicated or PAN truth.",
@@ -341,6 +467,7 @@ def main() -> None:
     parser.add_argument("--mode", choices=("windows", "whole"), default="windows")
     parser.add_argument("--num-perm", type=int, choices=(128, 256), default=128)
     parser.add_argument("--templates", type=Path)
+    parser.add_argument("--no-tracemalloc", action="store_true", help="Disable Python allocation tracing for large runs")
     parser.add_argument("--artifacts", type=Path, default=Path("ml/integrity/artifacts"))
     parser.add_argument("--output", type=Path, default=Path("ml/integrity/results.md"))
     args = parser.parse_args()

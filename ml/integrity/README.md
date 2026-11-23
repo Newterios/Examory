@@ -106,7 +106,20 @@ smallest eligible validation grid threshold with precision>=0.90 and the chosen
 minimum span. If none qualifies, high is disabled, not invented. These labels
 are relative review priorities; similarity does not establish plagiarism.
 
-Raw inputs and artifacts are excluded by ml/.gitignore. results.md is a template
-until a real corpus run overwrites it; smoke fixtures are not PAN measurements.
+The [PAN results](results.md) give the commands and corpus checksums for the
+H3 evaluation. Use a separate `--output` and `--artifacts` directory per run.
+`--no-tracemalloc` disables Python allocation tracking for large corpora and
+leaves the traced memory figure undefined. Both retrieval methods use the same
+prepared documents. The exact comparator uses shingle postings to compute
+intersections and preserves every document candidate with a nonempty window.
+
+For H3, a source and a suspicious document count as a positive pair when PAN
+localizes a literal or lightly edited target passage of at least 50 normalized
+tokens. This definition uses the gold annotation independently of the minimum
+span selected on validation. A source link with an unusable span still connects
+the document family and counts for overall pair evaluation. Each test split
+has its own query-family bootstrap intervals and fixed source bank.
+
+Raw inputs and artifacts are excluded by `ml/.gitignore`.
 Run `python -m unittest discover -s ml/tests -v` for the regression suite. It
 creates disposable synthetic events and a PAN-format fixture outside the repository.
