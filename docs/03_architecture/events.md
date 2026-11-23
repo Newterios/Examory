@@ -291,7 +291,7 @@ Signal only; never a verdict. Published only after an offline evaluation with do
 |---|---|
 | `question_index` | Position in the student's variant, using the same index as `quiz.answered`. |
 | `first_answer_time_ms` | Milliseconds from first display to the first saved answer. Later revisions retain this original time. |
-| `reference_median_ms`, `reference_scope` | Median first-answer time among normal training attempts for this quiz, variant and question when at least 30 observations were available (`item_train`). Other items use the median of all normal training first answers (`global_train`). Older model artifacts report `null` and `unavailable`. |
+| `reference_median_ms`, `reference_scope` | Median first-answer time among normal training attempts for this quiz, variant and question when at least 30 observations were available (`item_train`). Other items use the median of all normal training first answers (`global_train`). Older model artifacts report `null` and `unavailable`. The E-15 proposal adds `item_quiz_history` and `global_quiz_history` for a historical reference fitted within the quiz. Confirmed attempts are excluded. The digest in `features.reference_version` identifies the snapshot. |
 | `fast_threshold_ms`, `is_fast` | The model's normal-training 10th percentile for the item, with its global fallback. The flag is true exactly when `first_answer_time_ms < fast_threshold_ms`. |
 | `answer_changed` | True when at least one saved revision for this question has `is_change: true`. |
 

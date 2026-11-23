@@ -107,7 +107,8 @@ class Scorer:
         self.model = artifact["models"][MODEL_KEY]
         self.version = str(artifact["version"])
 
-    def score(self, target_attempt_id: str, events_by_attempt: dict[str, list[dict[str, Any]]]) -> Outcome:
+    def score(self, target_attempt_id: str, events_by_attempt: dict[str, list[dict[str, Any]]],
+              reference: dict[str, Any] | None = None) -> Outcome:
         """Score the target against its cohort (same group and quiz, including
         the student's earlier attempts for the score-delta history)."""
         target = events_by_attempt.get(target_attempt_id)
@@ -130,7 +131,9 @@ class Scorer:
                 else:
                     valid.extend(events)
             attempts = read_attempts(io.StringIO(to_csv(valid)))
-        frame = build_features(attempts, self.artifact["reference"])
+        if reference is None:
+            reference = self.artifact["reference"]
+        frame = build_features(attempts, reference)
         scores = score_model(frame, self.model)
         rows = frame.to_dict("records")
         index = next(i for i, row in enumerate(rows) if row["attempt_id"] == target_attempt_id)
@@ -142,7 +145,7 @@ class Scorer:
             return Outcome("scored", raw, level, cohort_attempts=len(rows), excluded=excluded)
         event = risk_event(rows[index], raw, self.model, self.version)
         event["payload"]["evidence"]["features"]["per_question"] = question_evidence(
-            attempts[index], target, self.artifact["reference"]
+            attempts[index], target, reference
         )
         if self.artifact.get("schema_version", 1) == 2:
             event["payload"]["evidence"]["features"].update({

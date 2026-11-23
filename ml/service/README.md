@@ -95,7 +95,7 @@ The unit tests (`ml/service/tests/test_service.py`, run with `python -m unittest
 
 - A global watermark plus a lateness bound, not a per-partition watermark. Attempts are scored once; late peers do not trigger re-scoring.
 - The frozen v1 artifact requires a fully answered, one-point quiz. The v2 reader accepts partial and weighted attempts and needs at least one observed answer.
-- The demo model is trained on synthetic generator data. Item timing references do not exist for live quiz ids, so the global fast-answer threshold is used.
+- The demo model is trained on synthetic generator data. An unseen live quiz uses its global fast-answer threshold unless the historical-reference policy below is enabled.
 - The score is a relative ranking, not a probability (events.md §4). The model has not been validated on real students.
 - Single-threaded loop with one DB connection; the cohort is re-read and re-parsed for every attempt (quadratic in cohort size; fine for class-sized cohorts).
 - No metrics. The `attempts.status` and `detail` columns are the only record of pending, not-scorable and no-signal outcomes, and they are not exposed through an API (FR-28 partial).
@@ -110,3 +110,24 @@ python -m ml.service.upgrade_v2 --model ml/service/model/model.pkl \
 ```
 
 Timing and revision features use observed question answers. V2 preserves the submitted weighted percentage and the original question indices, including omitted questions. Unanswered questions do not acquire fabricated response times. When `quiz.started` is available, v2 validates the returned indices against its roster size. Published evidence carries the answer count, available roster size and submission reason. An empty attempt has no timing observation and remains unscorable. A timeout alone cannot generate an alert. [Paired simulation and reference experiment](../experiments/behavior/live_results.md)
+
+## Per-quiz historical reference
+
+Set `ANOMALY_LIVE_REFERENCE=1` in the scorer container to use quiz-specific reference snapshots. Deploy the updated schema with grading first. A separate worker consumes verified teacher `risk.reviewed` events from `lms.grades` and fits a rolling reference over earlier eligible quiz submissions. Run it using the same scorer image, database and Kafka connection.
+
+```sh
+docker compose run --rm --no-deps --entrypoint python anomaly-scorer -m ml.service.reference_worker worker
+```
+
+The worker defaults to at least 30 scored attempts from the quiz, a 500-attempt rolling window, and a rebuild every 3,600 seconds. Configure its `ANOMALY_REFERENCE_MIN_ATTEMPTS`, `ANOMALY_REFERENCE_WINDOW` and `ANOMALY_REFERENCE_REBUILD_SECONDS` environment variables to change these limits. Before enough history exists, the scorer stores its baseline score and suppresses publication. Suppression also applies when the target is earlier than or equal to the most recent attempt in that snapshot. This prevents a backlogged attempt from using its own outcome or later students' outcomes.
+
+The reference contains question-specific p10 and median timings when a question has at least 30 observations. Other questions use the quiz-wide fallback. Confirmed targets are excluded, including a confirmation that arrives before its quiz event. An arriving confirmation disqualifies any active snapshot containing that attempt. Scoring resumes publication once an eligible snapshot is active. A dismissal leaves the attempt eligible. Review processing is idempotent. Unreviewed anomalous attempts can still affect the estimates.
+
+Inspect or switch versions with the same image and connection settings. Snapshot hashes identify their historical inputs and statistics. A rollback pins the selected eligible snapshot until an operator runs `resume`; ordinary rebuilds continue to record other snapshots while the head is pinned.
+
+```sh
+python -m ml.service.reference_worker rebuild --quiz "$QUIZ_ID"
+python -m ml.service.reference_worker list --quiz "$QUIZ_ID"
+python -m ml.service.reference_worker rollback --quiz "$QUIZ_ID" --version "$SNAPSHOT_DIGEST"
+python -m ml.service.reference_worker resume --quiz "$QUIZ_ID"
+```

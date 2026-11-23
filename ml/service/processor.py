@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
+from .quiz_reference import QuizReferences
 from .schema import EventValidator
 from .scoring import Outcome, Scorer
 from .store import OutboxRow, Store
@@ -43,9 +44,11 @@ def parse_time(value: str) -> datetime:
 
 
 class Processor:
-    def __init__(self, store: Store, scorer: Scorer, validator: EventValidator, lateness: timedelta) -> None:
+    def __init__(self, store: Store, scorer: Scorer, validator: EventValidator, lateness: timedelta,
+                 references: QuizReferences | None = None) -> None:
         self.store, self.scorer, self.validator, self.lateness = store, scorer, validator, lateness
         self.stats = Stats()
+        self.references = references
 
     def handle(self, raw: bytes) -> str:
         """Ingest one Kafka record value. Never raises for bad input: invalid
@@ -89,8 +92,20 @@ class Processor:
             readiness = is_ready(p.submitted_at, watermark, p.received_at, now, self.lateness)
             if not readiness.ready:
                 continue
+            live = self.references.get(p.quiz_id, p.submitted_at) if self.references is not None else None
             try:
-                outcome = self.scorer.score(p.attempt_id, self.store.cohort_events(p.group_id, p.quiz_id))
+                cohort = self.store.cohort_events(p.group_id, p.quiz_id)
+                if live is None:
+                    outcome = self.scorer.score(p.attempt_id, cohort)
+                    if self.references is not None and outcome.status in {"scored", "flagged"}:
+                        outcome.status, outcome.event, outcome.reason = "scored", None, "cold_start_no_publish"
+                else:
+                    version, reference = live
+                    outcome = self.scorer.score(p.attempt_id, cohort, reference)
+                    if outcome.status in {"scored", "flagged"}:
+                        outcome.reason = "quiz_reference:" + version
+                    if outcome.event is not None:
+                        outcome.event["payload"]["evidence"]["features"]["reference_version"] = version
             except Exception as exc:
                 log.exception("scoring failed", extra={"attempt_id": p.attempt_id})
                 outcome = Outcome("not_scorable", reason=f"scoring error: {type(exc).__name__}")

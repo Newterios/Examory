@@ -18,6 +18,7 @@ from pathlib import Path
 from .artifact import ArtifactError, expected_sha_from_env, load_verified
 from .kafka_io import KafkaPublisher, make_consumer, record_error
 from .processor import Processor
+from .quiz_reference import QuizReferences
 from .schema import EventValidator, find_dir
 from .scoring import Scorer
 from .store import PostgresStore
@@ -92,10 +93,15 @@ def main() -> int:
         log.warning("ANOMALY_MODEL_SHA256 not set: the pickle artifact is loaded without an integrity pin")
     schema_dir = Path(os.environ.get("ANOMALY_SCHEMA_DIR", "")) if os.environ.get("ANOMALY_SCHEMA_DIR") else find_dir()
     validator = EventValidator(schema_dir)
-    store = PostgresStore(env("ANOMALY_DATABASE_URL"))
+    dsn = env("ANOMALY_DATABASE_URL")
+    store = PostgresStore(dsn)
     store.migrate()
     lateness = timedelta(seconds=float(os.environ.get("ANOMALY_LATENESS_SECONDS", "5")))
-    processor = Processor(store, Scorer(artifact), validator, lateness)
+    live = os.environ.get("ANOMALY_LIVE_REFERENCE", "0")
+    if live not in {"0", "1"}:
+        raise ValueError("ANOMALY_LIVE_REFERENCE must be 0 or 1")
+    references = QuizReferences(dsn) if live == "1" else None
+    processor = Processor(store, Scorer(artifact), validator, lateness, references=references)
     brokers = env("ANOMALY_KAFKA_BROKERS")
     consumer = make_consumer(brokers, os.environ.get("ANOMALY_CONSUMER_GROUP", "anomaly-scorer"), QUIZ_TOPIC)
     publisher = KafkaPublisher(brokers)
@@ -128,6 +134,8 @@ def main() -> int:
         consumer.close()
         publisher.close()
         store.close()
+        if references is not None:
+            references.close()
         server.shutdown()
     return 0
 

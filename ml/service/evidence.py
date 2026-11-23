@@ -22,6 +22,7 @@ def question_evidence(attempt: dict[str, Any], target_events: list[dict[str, Any
 
     item_medians = reference.get("item_median_ms", {})
     global_median = reference.get("global_median_ms")
+    live = reference.get("population") == "quiz_history"
     result = []
     for question in sorted(attempt["first_times"], key=indices.__getitem__):
         elapsed = attempt["first_times"][question]
@@ -29,10 +30,10 @@ def question_evidence(attempt: dict[str, Any], target_events: list[dict[str, Any
         threshold = reference["item_fast_ms"].get(key, reference["global_fast_ms"])
         median = item_medians.get(key)
         if median is not None:
-            scope = "item_train"
+            scope = "item_quiz_history" if live else "item_train"
         else:
             median = global_median
-            scope = "global_train" if median is not None else "unavailable"
+            scope = ("global_quiz_history" if live else "global_train") if median is not None else "unavailable"
         result.append({
             "question_index": indices[question],
             "first_answer_time_ms": elapsed,

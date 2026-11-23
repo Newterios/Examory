@@ -10,3 +10,14 @@ Smallest held-out cohort by ID, group_002. All 60 complete simulator attempts we
 |---|---:|---:|---:|
 | iforest | 60 | 0 | 0 |
 | quantile_rules | 60 | 0 | 0 |
+
+## E-15. Normal alerts after warm-up
+
+The test cohorts use a new quiz and variant ID. The estimator and validation cutoffs remain fixed. At 2026-10-03T09:21:28.728000+00:00, the snapshot used 500 strictly earlier eligible attempts. The replay simulated 19 prior positive teacher confirmations and excluded them. The retained history contains 12 unconfirmed anomalous attempts. Synthetic labels are used to simulate these decisions and evaluate outcomes. The reference worker consumes teacher decisions and has no access to simulation labels.
+
+| Detector | Future normal attempts | Fixed synthetic FP / FPR | Warm quiz FP / FPR | Change (pp) |
+|---|---:|---:|---:|---:|
+| iforest | 76 | 4 / 5.26% | 1 / 1.32% | -3.95 |
+| quantile_rules | 76 | 14 / 18.42% | 4 / 5.26% | -13.16 |
+
+The cold-start policy suppresses publication until a historical snapshot is available. Its zero alerts during warm-up represent abstention. The warm comparison above counts decisions on the same future normal attempts. One synthetic quiz provides limited evidence for transfer to real courses.

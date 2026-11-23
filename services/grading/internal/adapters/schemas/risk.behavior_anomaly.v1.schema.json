@@ -62,7 +62,7 @@
                       "question_index": { "type": "integer", "minimum": 0, "maximum": 199 },
                       "first_answer_time_ms": { "$ref": "envelope.schema.json#/$defs/non_negative_ms" },
                       "reference_median_ms": { "type": ["number", "null"], "minimum": 0 },
-                      "reference_scope": { "enum": ["item_train", "global_train", "unavailable"] },
+                      "reference_scope": { "enum": ["item_train", "global_train", "item_quiz_history", "global_quiz_history", "unavailable"] },
                       "fast_threshold_ms": { "type": "number", "minimum": 0 },
                       "is_fast": { "type": "boolean" },
                       "answer_changed": { "type": "boolean" }
