@@ -19,10 +19,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import pandas as pd
+
 from ml.anomaly.features import write_json
 from ml.anomaly.split import create_manifest
 from ml.anomaly.train import train
 from ml.service.artifact import ArtifactError, load_verified, sha256_of
+from ml.service.detectors import DEFAULT_MODEL, NAMES, ModelScore, explain_rules
 from ml.service.processor import Processor
 from ml.service.schema import EventValidator, find_dir
 from ml.service.scoring import Scorer, check_attempt, deterministic_risk_id, level_for
@@ -72,11 +76,11 @@ class FakeStore:
         return out
 
     def finish(self, attempt_id: str, status: str, raw: float | None, level: str | None, detail: str,
-               outbox: OutboxRow | None, event_id: str | None) -> bool:
+               outbox: OutboxRow | None, event_id: str | None, scores: tuple[ModelScore, ...]) -> bool:
         a = self.attempts[attempt_id]
         if a["status"] != "pending":
             return False
-        a.update(status=status, raw=raw, level=level, detail=detail)
+        a.update(status=status, raw=raw, level=level, detail=detail, model_scores=scores)
         if outbox is not None and outbox.risk_id not in self.outbox:
             self.outbox[outbox.risk_id] = {"row": outbox, "event_id": event_id, "published": False}
         return True
@@ -169,9 +173,9 @@ class ServiceTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.tmp.cleanup()
 
-    def processor(self) -> tuple[Processor, FakeStore]:
+    def processor(self, publish_model: str = DEFAULT_MODEL) -> tuple[Processor, FakeStore]:
         store = FakeStore()
-        return Processor(store, Scorer(self.artifact), self.validator, timedelta(seconds=5)), store
+        return Processor(store, Scorer(self.artifact, publish_model), self.validator, timedelta(seconds=5)), store
 
     # --- watermark -------------------------------------------------------
     def test_watermark(self) -> None:
@@ -216,7 +220,8 @@ class ServiceTests(unittest.TestCase):
 
     # --- scoring, events, determinism -------------------------------------
     def test_scores_generator_cohorts_and_events_match_schema(self) -> None:
-        proc, store = self.processor()
+        # Preserve the original forest replay regression while the default changes.
+        proc, store = self.processor("iforest")
         for e in self.envelopes:
             proc.handle(json.dumps(e).encode())
         store.clock = T0 + timedelta(days=400)
@@ -313,6 +318,62 @@ class ServiceTests(unittest.TestCase):
         equal = {"medium_threshold": 0.5, "high_threshold": 0.5}  # README: equal cutoffs -> no medium cases
         self.assertEqual(level_for(0.5, equal), "high")
 
+    def test_rule_explanation_reports_raw_bounds_and_ties(self) -> None:
+        model = {"columns": ["mean_answer_time_ms"], "medians": np.array([np.log1p(20)]),
+                 "sorted_train": np.array([[np.log1p(v), 0.] for v in (10, 20, 20, 30)]),
+                 "medium_threshold": .75}
+        # Both endpoint ties qualify exactly at .75. Values in between do not.
+        for value, bound in [(10, "<= 10"), (30, ">= 30")]:
+            detail = explain_rules(pd.DataFrame({"mean_answer_time_ms": [value]}), model, .75)
+            self.assertIn(bound, detail)
+            self.assertIn("mean_answer_time_ms", detail)
+            self.assertNotIn(".missing", detail)
+        detail = explain_rules(pd.DataFrame({"mean_answer_time_ms": [np.nan]}), model, 1.)
+        self.assertIn("mean_answer_time_ms.missing=1 (rule > 0", detail)
+
+    def test_published_and_shadow_model_switch(self) -> None:
+        self.assertEqual(Scorer(self.artifact).publish_model, "quantile_rules")
+        with self.assertRaisesRegex(ValueError, "ANOMALY_PUBLISH_MODEL"):
+            Scorer(self.artifact, "unrecognized")
+        events = live_attempt("u", "g", "q", "v", T0, [500] * 20, ["a"] * 20)
+        attempt_id = events[-1]["payload"]["attempt_id"]
+        # Routing test cutoffs exercise both routes independently of either model's performance.
+        for key in NAMES:
+            for alert in (True, False):
+                store = FakeStore()
+                models = {k: dict(v) for k, v in self.artifact["models"].items()}
+                for name in NAMES:
+                    models[name]["medium_threshold"] = .1 if alert or name != key else 1.1
+                    models[name]["high_threshold"] = 1.1
+                artifact = dict(self.artifact, models=models)
+                proc = Processor(store, Scorer(artifact, key), self.validator, timedelta(seconds=5))
+                for event in events:
+                    proc.handle(json.dumps(event).encode())
+                store.clock += timedelta(hours=1)
+                self.assertEqual(proc.score_ready(), 1)
+                scores = {s.key: s for s in store.attempts[attempt_id]["model_scores"]}
+                self.assertEqual(set(scores), set(NAMES))
+                other = next(k for k in NAMES if k != key)
+                self.assertTrue(scores[other].shadow)
+                self.assertFalse(scores[key].shadow)
+                self.assertEqual(scores[key].raw, store.attempts[attempt_id]["raw"])
+                self.assertEqual(scores[other].level, "medium")
+                self.assertEqual(len(store.outbox), int(alert))
+                if alert:
+                    risk = json.loads(next(iter(store.outbox.values()))["row"].envelope)
+                    self.assertEqual(self.validator.errors(risk), [])
+                    self.assertEqual(risk["payload"]["model"]["name"], NAMES[key])
+                    self.assertEqual(risk["payload"]["risk_id"], deterministic_risk_id("0.1.0", attempt_id, key))
+                    if key == "quantile_rules":
+                        self.assertIn("(rule ", risk["payload"]["explanation"])
+                        self.assertNotIn("Isolation Forest", risk["payload"]["explanation"])
+                initial = dict(store.outbox)
+                restarted = Processor(store, Scorer(artifact, other), self.validator, timedelta(seconds=5))
+                for event in events:
+                    restarted.handle(json.dumps(event).encode())
+                self.assertEqual(restarted.score_ready(), 0)
+                self.assertEqual(store.outbox, initial)
+
     # --- artifact verification -------------------------------------------
     def test_artifact_verification(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -330,7 +391,9 @@ class ServiceTests(unittest.TestCase):
                 load_verified(good)
             for mutate in (lambda a: a.update(schema_version=2),
                            lambda a: a["environment"]["libraries"].update({"scikit-learn": "0.0.1"}),
-                           lambda a: a["models"].pop("iforest")):
+                           lambda a: a["models"].pop("iforest"),
+                           lambda a: a["models"].pop("quantile_rules"),
+                           lambda a: a["models"]["quantile_rules"].update(sorted_train=np.array([]))):
                 artifact = pickle.loads(self.model_path.read_bytes())
                 mutate(artifact)
                 bad = root / "bad.pkl"

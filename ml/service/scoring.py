@@ -4,7 +4,8 @@ Live platform events are written into the generator's CSV layout and passed to
 ``features.read_attempts`` as a file-like object, then ``build_features`` and
 ``train.score_model`` run with the artifact's reference and thresholds, and
 ``to_risk_event.risk_event`` builds the event (marginal-outlier explanation).
-Only the risk_id is replaced by a deterministic one.
+The configured detector publishes. Both detectors use the same attempt
+features and retain their own validation cutoffs.
 
 Input contract of the frozen pipeline v1 (checked per attempt; attempts that
 violate it are recorded as not scorable instead of failing the cohort):
@@ -29,17 +30,17 @@ from ml.anomaly.features import ANSWER_KEYS, SUBMIT_KEYS, build_features, read_a
 from ml.anomaly.to_risk_event import risk_event
 from ml.anomaly.train import score_model
 
-MODEL_KEY = "iforest"
-MODEL_NAME = "isolation-forest-v1"  # as named by ml/anomaly/to_risk_event.py
+from .detectors import DEFAULT_MODEL, NAMES, ModelScore, explain_rules
+
 RISK_NAMESPACE = uuid.UUID("6f1c2d3e-4b5a-5c6d-8e7f-90a1b2c3d4e5")
 CSV_COLUMNS = ("event_id", "event_type", "version", "occurred_at", "producer", "actor", "context", "payload")
 SCORED_TYPES = {"quiz.answered": ANSWER_KEYS, "quiz.submitted": SUBMIT_KEYS}
 
 
-def deterministic_risk_id(artifact_version: str, attempt_id: str) -> str:
+def deterministic_risk_id(artifact_version: str, attempt_id: str, model_key: str = "iforest") -> str:
     """Same attempt + same model version -> same risk_id, so re-processing an
     attempt can never create a second signal (grading dedupes on risk_id)."""
-    return str(uuid.uuid5(RISK_NAMESPACE, f"risk.behavior_anomaly:{MODEL_NAME}:{artifact_version}:{attempt_id}"))
+    return str(uuid.uuid5(RISK_NAMESPACE, f"risk.behavior_anomaly:{NAMES[model_key]}:{artifact_version}:{attempt_id}"))
 
 
 def level_for(raw_score: float, model: dict[str, Any]) -> str:
@@ -94,14 +95,18 @@ class Outcome:
     reason: str = ""
     cohort_attempts: int = 0
     excluded: dict[str, str] = field(default_factory=dict)
+    model_scores: tuple[ModelScore, ...] = ()
 
 
 class Scorer:
     """Wraps a verified artifact (see artifact.py)."""
 
-    def __init__(self, artifact: dict[str, Any]) -> None:
+    def __init__(self, artifact: dict[str, Any], publish_model: str = DEFAULT_MODEL) -> None:
+        if publish_model not in NAMES:
+            raise ValueError(f"Unknown ANOMALY_PUBLISH_MODEL {publish_model!r}; choose one of {sorted(NAMES)}")
         self.artifact = artifact
-        self.model = artifact["models"][MODEL_KEY]
+        self.publish_model = publish_model
+        self.model = artifact["models"][publish_model]
         self.version = str(artifact["version"])
 
     def score(self, target_attempt_id: str, events_by_attempt: dict[str, list[dict[str, Any]]]) -> Outcome:
@@ -123,17 +128,23 @@ class Scorer:
                 valid.extend(events)
         attempts = read_attempts(io.StringIO(to_csv(valid)))
         frame = build_features(attempts, self.artifact["reference"])
-        scores = score_model(frame, self.model)
-        rows = frame.to_dict("records")
-        index = next(i for i, row in enumerate(rows) if row["attempt_id"] == target_attempt_id)
-        raw = float(scores[index])
-        if not math.isfinite(raw):
-            return Outcome("not_scorable", reason="non-finite score", cohort_attempts=len(rows), excluded=excluded)
-        level = level_for(raw, self.model)
-        if level == "low":
-            return Outcome("scored", raw, level, cohort_attempts=len(rows), excluded=excluded)
-        event = risk_event(rows[index], raw, self.model, self.version)
-        event["payload"]["risk_id"] = deterministic_risk_id(self.version, target_attempt_id)
-        if event["payload"]["level"] != level:  # both derive from the same thresholds
-            raise AssertionError("severity mapping diverged from the frozen pipeline")
-        return Outcome("flagged", raw, level, event, cohort_attempts=len(rows), excluded=excluded)
+        target_frame = frame.loc[frame["attempt_id"] == target_attempt_id]
+        scores = {}
+        for key in NAMES:
+            model = self.artifact["models"][key]
+            raw = float(score_model(target_frame, model)[0])
+            if not math.isfinite(raw):
+                return Outcome("not_scorable", reason=f"non-finite {key} score", cohort_attempts=len(frame), excluded=excluded)
+            scores[key] = ModelScore(key, self.version, raw, level_for(raw, model), key != self.publish_model)
+        primary = scores[self.publish_model]
+        outcome = Outcome("scored", primary.raw, primary.level, cohort_attempts=len(frame), excluded=excluded,
+                          model_scores=tuple(scores.values()))
+        if primary.level != "low":
+            event = risk_event(target_frame.iloc[0].to_dict(), primary.raw, self.model, self.version)
+            payload = event["payload"]
+            payload["risk_id"] = deterministic_risk_id(self.version, target_attempt_id, self.publish_model)
+            payload["model"]["name"] = NAMES[self.publish_model]
+            if self.publish_model == "quantile_rules":
+                payload["explanation"] = explain_rules(target_frame, self.model, primary.raw)
+            outcome.status, outcome.event = "flagged", event
+        return outcome

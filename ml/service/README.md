@@ -1,6 +1,8 @@
 # ml/service — anomaly scoring service (M4)
 
-This service consumes `lms.quizzes` and stores the raw quiz events once each, in its own Postgres database `anomaly`. When an attempt is submitted and its peers can be complete, it scores the attempt with the **frozen** behavior baseline in `ml/anomaly/`, which is reused unchanged. If the score reaches the model's medium threshold, it publishes `risk.behavior_anomaly` to `ai.risk` (FR-41).
+This service consumes `lms.quizzes` and stores quiz events once each in its own Postgres database, `anomaly`. It scores a ready attempt with both frozen detectors from `ml/anomaly/`. By default, two-sided quantile rules publish `risk.behavior_anomaly` to `ai.risk` when their raw score reaches the rules' validation-selected medium threshold (FR-41). The service records the Isolation Forest result for comparison.
+
+On the [H1 simulator evaluation](../experiments/inflation/results/tables/h1.md), the forest's recall gain over rules was −4.5 percentage points for peer copying and −1.2 points for proxy test-taking at nominal FPR ≤ 5%. This decision depends on training data quality. With substantial contamination in the [training reference](../experiments/inflation/results/tables/protocol.md), the forest gained 21.4 points on peer copying. The [verification plan](../../docs/08_verification/verification_plan.md) records this limitation and the pending real-log evaluation.
 
 > **Security warning — the model artifact is a Python pickle.** Loading a pickle runs whatever code the file's author put in it. Only load an artifact you built yourself with `make anomaly-model` on a trusted machine. Never load one downloaded or received from someone else, and never let the model directory be writable by anyone else.
 >
@@ -21,11 +23,12 @@ This service consumes `lms.quizzes` and stores the raw quiz events once each, in
    Limitation: this is a global watermark, not a per-partition one. A peer submission delayed by more than the lateness bound is missed.
 3. **Score** (`scoring.py`).
    - The cohort is every stored attempt with the same group and quiz, which also covers the student's earlier attempts (score-delta history).
-   - Events are written in the generator CSV layout and passed to `features.read_attempts` as a file-like object, then to `build_features` with the artifact's reference and to `train.score_model` with the `iforest` model.
+   - Events are written in the generator CSV layout and passed to `features.read_attempts`, then to `build_features` with the artifact's reference. Both detectors score the target's feature row using their respective medians, learned parameters and validation cutoffs. Each service instance has one publishing detector and one shadow detector.
    - Before scoring, each attempt is checked on its own. Attempts the frozen reader rejects are excluded from the cohort; if the target is one of them, it is recorded as `not_scorable` with the reason.
 4. **Emit.**
-   - A raw score ≥ the medium threshold yields `to_risk_event.risk_event(...)`, unchanged except for the risk id. Severity is medium/high per the artifact thresholds, and the explanation is the frozen list of marginal outliers.
-   - `risk_id` is replaced by a deterministic UUIDv5 of model name, artifact version and attempt id, so re-processing can never create a second signal.
+   - The configured detector's raw score determines severity. The published score is its percentile in the normal training-score distribution. For the forest, the event names `isolation-forest-v1` and gives the frozen marginal-outlier explanation. For `quantile-rules-v1`, the explanation lists features meeting the raw alert cutoff, observed values, lower or upper boundaries and empirical midranks. Strict or inclusive comparisons account for ties. Logged timing features are displayed in original units. Imputation and missingness indicators are named explicitly. A rank of 0.5 describes a value at the training center.
+   - For each scorable attempt, the same database transaction writes both raw scores, their levels, model keys, artifact version and shadow flags to `attempt_model_scores`. Only the publishing detector can produce an outbox record. A shadow alert beside a low primary score remains available in Postgres.
+   - The UUIDv5 uses the published model name, artifact version and attempt ID. The historical forest ID calculation is preserved. A change of detector changes the ID namespace for a given attempt, but only pending attempts can finalize, even across concurrent workers and delivery retries. Previously finalized rows, including forest alerts from earlier installations, retain their decisions and any unpublished outbox bytes. Existing installations acquire the new table at startup, with comparison scores recorded prospectively. A clean database has no memory of prior publications.
    - The event is validated against `risk.behavior_anomaly.v1.schema.json` and stored in `risk_outbox` in the same transaction that marks the attempt `flagged`. Below the threshold the attempt is marked `scored` (level `low`) and no event is published (events.md: absence of a risk is not evidence of integrity).
 5. **Publish.** Outbox rows go to `ai.risk` through an idempotent producer (acks=all), keyed by the target attempt id, and are marked once the broker acknowledges them. On a crash the same bytes, with the same `event_id`, are re-sent; grading deduplicates by `event_id` and `risk_id`.
 
@@ -43,6 +46,7 @@ Attempts that break these rules are recorded as `not_scorable` and never crash t
 | Variable | Default | Notes |
 |---|---|---|
 | `ANOMALY_MODEL_PATH` | — (required) | the service refuses to start without a valid artifact |
+| `ANOMALY_PUBLISH_MODEL` | `quantile_rules` | Accepts `quantile_rules` or `iforest`. The other detector runs in shadow. Both models must be present in the trusted artifact. |
 | `ANOMALY_MODEL_SHA256` | empty | strongly recommended; checked before unpickling. A warning is logged when it is unset. |
 | `ANOMALY_DATABASE_URL` | — (required, secret) | role `anomaly_svc`, database `anomaly` (tables are created at start under an advisory lock) |
 | `ANOMALY_KAFKA_BROKERS` | — (required) | |
@@ -53,6 +57,15 @@ Attempts that break these rules are recorded as `not_scorable` and never crash t
 | `ANOMALY_LOG_LEVEL` | `INFO` | JSON logs; payloads, answers and secrets are never logged |
 
 ## Run and test
+
+The standard Compose invocation runs the default rules. To run the forest as primary with the existing Compose file, save the following as a local override outside Git and recreate the scorer with `docker compose -f docker-compose.yml -f /path/to/override.yml up -d anomaly-scorer`:
+
+```yaml
+services:
+  anomaly-scorer:
+    environment:
+      ANOMALY_PUBLISH_MODEL: iforest
+```
 
 ```bash
 make anomaly-model      # builds the image, then generates data (generator, 2000 students, seed 42),
@@ -70,9 +83,12 @@ The unit tests (`ml/service/tests/test_service.py`, run with `python -m unittest
 - the deterministic `risk_id` and no duplicate signal on re-processing;
 - the severity mapping;
 - publish/ack;
-- live platform-shaped events (UUIDs, the `reason` field): two crafted fast, identical, synchronous attempts are flagged;
+- live platform-shaped events (UUIDs, the `reason` field), including the acceptance expectation that two crafted fast, identical, synchronous attempts are flagged;
 - `not_scorable` inputs;
-- artifact verification: SHA pin, world-writable file, schema version, library mismatch, missing model.
+- artifact verification: SHA pin, world-writable file, schema version, library mismatch, missing model;
+- both publication modes, rule boundaries including tied values, shadow-only alerts, and replay after switching the publishing detector.
+
+The 120-student seed-42 unit-test artifact selected a medium and high rules cutoff of `1.0000000000000002`. All ten live-shaped attempts had raw score `1.0`, so the service emitted zero alerts, including for the two crafted attempts. The live-attempt assertion fails on this fixture. The frozen validation procedure can select the next representable number above the maximum to respect its FPR constraint when tied scores prevent a useful cutoff. This result requires a detector/calibration decision before accepting the M4 scenario.
 
 ## Dependencies (pinned in `requirements.txt`)
 
@@ -84,6 +100,15 @@ The unit tests (`ml/service/tests/test_service.py`, run with `python -m unittest
 `pip-audit -r ml/service/requirements.txt`: no known vulnerabilities (November 2026). Hashes are not pinned (no `--require-hashes`).
 
 ## Known limitations
+
+In the local M4 run on the 2,000-student seed-42 demo artifact, the rules
+flagged both crafted attempts and four of the eight ordinary fixture attempts.
+The shadow forest flagged the two crafted attempts. PostgreSQL held one
+primary and one shadow score per attempt, and all six published events
+identified the quantile rules. The unchanged Go scenario passed because
+it checks that both crafted attempts are present. Four extra signals fail
+the E-04 acceptance criterion. These ten constructed attempts do not
+estimate a student-population false-positive rate.
 
 - A global watermark plus a lateness bound, not a per-partition watermark. Attempts are scored once; late peers do not trigger re-scoring.
 - Only 1-point, fully answered quizzes are scorable (frozen pipeline v1).

@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .artifact import ArtifactError, expected_sha_from_env, load_verified
+from .detectors import DEFAULT_MODEL
 from .kafka_io import KafkaPublisher, make_consumer, record_error
 from .processor import Processor
 from .schema import EventValidator, find_dir
@@ -85,7 +86,8 @@ def main() -> int:
     log = logging.getLogger("anomaly")
     try:
         artifact = load_verified(env("ANOMALY_MODEL_PATH"), expected_sha_from_env())
-    except ArtifactError as exc:
+        scorer = Scorer(artifact, env("ANOMALY_PUBLISH_MODEL", DEFAULT_MODEL))
+    except (ArtifactError, ValueError) as exc:
         log.error("refusing to start: %s", exc)
         return 2
     if not expected_sha_from_env():
@@ -95,7 +97,7 @@ def main() -> int:
     store = PostgresStore(env("ANOMALY_DATABASE_URL"))
     store.migrate()
     lateness = timedelta(seconds=float(os.environ.get("ANOMALY_LATENESS_SECONDS", "5")))
-    processor = Processor(store, Scorer(artifact), validator, lateness)
+    processor = Processor(store, scorer, validator, lateness)
     brokers = env("ANOMALY_KAFKA_BROKERS")
     consumer = make_consumer(brokers, os.environ.get("ANOMALY_CONSUMER_GROUP", "anomaly-scorer"), QUIZ_TOPIC)
     publisher = KafkaPublisher(brokers)
@@ -105,8 +107,9 @@ def main() -> int:
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopping.set())
     log.info("anomaly scorer started", extra={"model_version": artifact["version"],
-                                              "medium_threshold": artifact["models"]["iforest"]["medium_threshold"],
-                                              "high_threshold": artifact["models"]["iforest"]["high_threshold"]})
+                                              "publish_model": scorer.publish_model,
+                                              "medium_threshold": scorer.model["medium_threshold"],
+                                              "high_threshold": scorer.model["high_threshold"]})
     last_tick = 0.0
     try:
         while not stopping.is_set():

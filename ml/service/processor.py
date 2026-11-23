@@ -104,14 +104,16 @@ class Processor:
             errors = self.validator.errors(outcome.event)
             if errors:  # never publish an event that violates the contract
                 outcome = Outcome("not_scorable", outcome.raw_score, outcome.level,
-                                  reason="produced event invalid: " + "; ".join(errors[:3]))
+                                  reason="produced event invalid: " + "; ".join(errors[:3]),
+                                  model_scores=outcome.model_scores)
             else:
                 payload = outcome.event["payload"]
                 event_id = outcome.event["event_id"]
                 outbox = OutboxRow(payload["risk_id"], RISK_TOPIC, payload["target_id"],
                                    json.dumps(outcome.event, ensure_ascii=False, allow_nan=False, separators=(",", ":")))
         detail = outcome.reason or f"ready by {why}; cohort={outcome.cohort_attempts}; excluded={len(outcome.excluded)}"
-        if self.store.finish(attempt_id, outcome.status, outcome.raw_score, outcome.level, detail, outbox, event_id):
+        if self.store.finish(attempt_id, outcome.status, outcome.raw_score, outcome.level, detail, outbox,
+                             event_id, outcome.model_scores):
             setattr(self.stats, outcome.status, getattr(self.stats, outcome.status) + 1)
             log.info("attempt assessed", extra={"attempt_id": attempt_id, "status": outcome.status,
                                                 "level": outcome.level, "ready_by": why})

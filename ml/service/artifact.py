@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import math
 import os
 import stat
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any
 
 from ml.anomaly.train import load_artifact
 
-from .scoring import MODEL_KEY
+from .detectors import NAMES
 
 SUPPORTED_SCHEMA_VERSION = 1
 PINNED_LIBRARIES = ("numpy", "pandas", "scikit-learn")
@@ -58,14 +59,21 @@ def load_verified(path: str | Path, expected_sha256: str | None = None) -> dict[
 def verify(artifact: dict[str, Any]) -> None:
     if not isinstance(artifact, dict) or artifact.get("schema_version") != SUPPORTED_SCHEMA_VERSION:
         raise ArtifactError("artifact schema_version is not supported")
-    model = artifact.get("models", {}).get(MODEL_KEY)
-    if not isinstance(model, dict):
-        raise ArtifactError("artifact has no iforest model")
-    for key in ("columns", "medians", "estimator", "train_scores", "medium_threshold", "high_threshold", "bounds"):
-        if key not in model:
-            raise ArtifactError(f"iforest model lacks {key}")
-    if not model["high_threshold"] >= model["medium_threshold"]:
-        raise ArtifactError("high threshold below medium threshold")
+    for name in NAMES:
+        model = artifact.get("models", {}).get(name)
+        if not isinstance(model, dict) or model.get("kind") != name:
+            raise ArtifactError(f"missing or mismatched {name} model")
+        specific = "sorted_train" if name == "quantile_rules" else "estimator"
+        for key in ("columns", "medians", specific, "train_scores", "medium_threshold", "high_threshold", "bounds"):
+            if key not in model:
+                raise ArtifactError(f"{name} model lacks {key}")
+        medium, high = model["medium_threshold"], model["high_threshold"]
+        if not (math.isfinite(medium) and math.isfinite(high) and high >= medium):
+            raise ArtifactError(f"invalid {name} thresholds")
+        if name == "quantile_rules":
+            ref = model["sorted_train"]
+            if getattr(ref, "ndim", None) != 2 or ref.shape[1] != 2 * len(model["columns"]) or not len(ref):
+                raise ArtifactError("invalid quantile_rules training reference shape")
     if "reference" not in artifact or "version" not in artifact:
         raise ArtifactError("artifact lacks reference/version")
     built = artifact.get("environment", {}).get("libraries", {})

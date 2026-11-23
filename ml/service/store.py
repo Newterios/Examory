@@ -14,6 +14,8 @@ from typing import Any, Protocol
 import psycopg
 from psycopg.rows import tuple_row
 
+from .detectors import ModelScore
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS quiz_events (
     event_id    uuid PRIMARY KEY,
@@ -41,6 +43,15 @@ CREATE TABLE IF NOT EXISTS attempts (
 );
 CREATE INDEX IF NOT EXISTS attempts_cohort_idx ON attempts (group_id, quiz_id);
 CREATE INDEX IF NOT EXISTS attempts_pending_idx ON attempts (submitted_at) WHERE status = 'pending';
+CREATE TABLE IF NOT EXISTS attempt_model_scores (
+    attempt_id text NOT NULL REFERENCES attempts(attempt_id),
+    model_key text NOT NULL,
+    artifact_version text NOT NULL,
+    raw_score double precision NOT NULL,
+    level text NOT NULL CHECK (level IN ('low', 'medium', 'high')),
+    is_shadow boolean NOT NULL,
+    PRIMARY KEY (attempt_id, model_key)
+);
 CREATE TABLE IF NOT EXISTS risk_outbox (
     risk_id      text PRIMARY KEY,
     attempt_id   text        NOT NULL UNIQUE REFERENCES attempts (attempt_id),
@@ -79,7 +90,7 @@ class Store(Protocol):
     def pending(self, limit: int) -> list[Pending]: ...
     def cohort_events(self, group_id: str, quiz_id: str) -> dict[str, list[dict[str, Any]]]: ...
     def finish(self, attempt_id: str, status: str, raw_score: float | None, level: str | None,
-               detail: str, outbox: OutboxRow | None, event_id: str | None) -> bool: ...
+               detail: str, outbox: OutboxRow | None, event_id: str | None, scores: tuple[ModelScore, ...]) -> bool: ...
     def unpublished(self, limit: int) -> list[OutboxRow]: ...
     def mark_published(self, risk_ids: list[str]) -> None: ...
     def ping(self) -> None: ...
@@ -149,13 +160,18 @@ class PostgresStore:
             return out
 
     def finish(self, attempt_id: str, status: str, raw_score: float | None, level: str | None,
-               detail: str, outbox: OutboxRow | None, event_id: str | None) -> bool:
+               detail: str, outbox: OutboxRow | None, event_id: str | None, scores: tuple[ModelScore, ...]) -> bool:
         with self._conn.transaction(), self._conn.cursor() as cur:
             cur.execute("UPDATE attempts SET status = %s, raw_score = %s, level = %s, detail = %s, scored_at = now() "
                         "WHERE attempt_id = %s AND status = 'pending'",
                         (status, raw_score, level, detail[:2000], attempt_id))
             if cur.rowcount != 1:
                 return False  # already scored (another replica or a re-run)
+            if scores:
+                cur.executemany(
+                    "INSERT INTO attempt_model_scores (attempt_id, model_key, artifact_version, raw_score, level, is_shadow) "
+                    "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (attempt_id, model_key) DO NOTHING",
+                    [(attempt_id, s.key, s.version, s.raw, s.level, s.shadow) for s in scores])
             if outbox is not None:
                 cur.execute("INSERT INTO risk_outbox (risk_id, attempt_id, event_id, topic, partition_key, envelope) "
                             "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (risk_id) DO NOTHING",
