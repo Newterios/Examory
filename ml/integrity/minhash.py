@@ -6,22 +6,23 @@ import argparse
 import json
 import re
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
+from itertools import batched
 from pathlib import Path
 from typing import Any
 
 from datasketch import MinHash, MinHashLSH
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Token:
     value: str
     start: int
     end: int
 
 
-@dataclass
+@dataclass(slots=True)
 class Window:
     start: int
     end: int
@@ -29,7 +30,7 @@ class Window:
     signature: MinHash
 
 
-@dataclass
+@dataclass(slots=True)
 class Document:
     identifier: str
     text: str
@@ -45,6 +46,7 @@ def tokenize(text: str) -> list[Token]:
     Offsets are Unicode code points, not UTF-8 bytes or JavaScript UTF-16 units.
     """
     result = []
+    vocabulary: dict[str, str] = {}
     start = None
     for index in range(len(text) + 1):
         word = index < len(text) and (text[index] == "_" or unicodedata.category(text[index])[0] in "LNM")
@@ -52,8 +54,10 @@ def tokenize(text: str) -> list[Token]:
             start = index
         elif not word and start is not None:
             normalized = unicodedata.normalize("NFKC", text[start:index]).casefold()
-            for match in re.finditer(r"\w+", normalized, flags=re.UNICODE):
-                result.append(Token(match.group(), start, index))
+            # An alphanumeric word is already one complete normalized token.
+            parts = (normalized,) if normalized.isalnum() else re.findall(r"\w+", normalized)
+            for value in parts:
+                result.append(Token(vocabulary.setdefault(value, value), start, index))
             start = None
     return result
 
@@ -69,19 +73,33 @@ def document(identifier: str, text: str, seed: int = 42, num_perm: int = 128,
     excluded = excluded or set()
     tokens = tokenize(text)
     windows = []
+    # Adjacent 200-token windows share 96 of their 196 positional shingles.
+    # Keep a single tuple at each position and let both windows reference it.
+    words = [token.value for token in tokens]
+    positional = [tuple(words[i:i + 5]) for i in range(len(words) - 4)]
+    del words
+    # Every window uses the same seeded permutations; only its minima change.
+    permutations = MinHash(num_perm=num_perm, seed=seed).permutations
     starts = [0] if mode == "whole" else range(0, len(tokens), 100)
     for start in starts:
         end = len(tokens) if mode == "whole" else min(len(tokens), start + 200)
-        values = shingles(tokens[start:end], excluded)
+        values = set(positional[start:max(start, end - 4)])
+        values.difference_update(excluded)
         if values:
-            signature = MinHash(num_perm=num_perm, seed=seed)
-            signature.update_batch([json.dumps(value, ensure_ascii=False).encode("utf-8") for value in sorted(values)])
+            signature = MinHash(num_perm=num_perm, seed=seed, permutations=permutations)
+            # Minima are independent of order and batch boundaries. Bound the
+            # temporary (shingles x permutations) array even for whole books.
+            for batch in batched(values, 1024):
+                # tokenize emits only word characters, so none need JSON escaping.
+                # Preserve the original UTF-8 JSON array representation exactly.
+                signature.update_batch(('["' + '", "'.join(value) + '"]').encode("utf-8") for value in batch)
             windows.append(Window(start, end, values, signature))
     return Document(identifier, text, tokens, windows)
 
 
 def exact_jaccard(left: set, right: set) -> float:
-    return len(left & right) / len(left | right) if left or right else 0.0
+    common = len(left & right)
+    return common / (len(left) + len(right) - common) if common else 0.0
 
 
 def token_runs(left: Document, right: Document, a: Window, b: Window,
@@ -150,11 +168,19 @@ class Detector:
         return document(key, text, self.seed, self.num_perm, self.mode, self.excluded)
 
     def retrieve(self, query: Document, exhaustive: bool = False) -> dict[str, list[dict[str, Any]]]:
-        """Retain all exact window scores; validation can tune without reindexing."""
+        """Retain candidate document IDs and hits usable by verify (threshold >= 0.5).
+
+        LSH proposes approximate window pairs. The exhaustive reference compares
+        every nonempty source with every nonempty query, independent of LSH.
+        Shingle postings count exact intersections; unvisited pairs have zero
+        intersection. Scoring below the verification floor cannot yield a span.
+        Exhaustive timing includes construction of the query-local postings.
+        """
+        if exhaustive:
+            return self._exhaustive(query)
         pairs: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for window in query.windows:
-            candidates = ([(key, i) for key, doc in self.sources.items() for i in range(len(doc.windows))]
-                          if exhaustive else self.index.query(window.signature))
+            candidates = self.index.query(window.signature)
             for key, index in sorted(candidates):
                 if key == query.identifier:
                     continue
@@ -162,10 +188,38 @@ class Detector:
                 other = source.windows[index]
                 similarity = exact_jaccard(window.shingles, other.shingles)
                 # Candidate membership must survive even if exact overlap is zero.
-                pairs[key].append({"similarity": similarity,
-                                   "runs": token_runs(query, source, window, other, self.excluded)
-                                   if similarity >= .5 else []})
+                hits = pairs[key]
+                if similarity >= .5:
+                    hits.append({"similarity": similarity,
+                                 "runs": token_runs(query, source, window, other, self.excluded)})
         return dict(pairs)
+
+    def _exhaustive(self, query: Document) -> dict[str, list[dict[str, Any]]]:
+        if not query.windows:
+            return {}
+        postings: dict[tuple[str, ...], list[int]] = defaultdict(list)
+        for index, window in enumerate(query.windows):
+            for value in window.shingles:
+                postings[value].append(index)
+        pairs = {}
+        for key, source in self.sources.items():
+            if key == query.identifier or not source.windows:
+                continue
+            hits = []
+            pairs[key] = hits
+            for other in source.windows:
+                counts: Counter[int] = Counter()
+                for value in other.shingles:
+                    indices = postings.get(value)
+                    if indices:
+                        counts.update(indices)
+                for index, common in counts.items():
+                    window = query.windows[index]
+                    union = len(window.shingles) + len(other.shingles) - common
+                    if 2 * common >= union:
+                        hits.append({"similarity": common / union,
+                                     "runs": token_runs(query, source, window, other, self.excluded)})
+        return pairs
 
     def verify(self, query: Document, candidates: dict[str, list[dict[str, Any]]],
                threshold: float = .65, min_span: int = 20) -> list[dict[str, Any]]:
