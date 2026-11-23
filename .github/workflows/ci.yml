@@ -52,6 +52,16 @@ jobs:
           docker compose run --rm kafka-init
       - name: Run integration tests (platform and services)
         run: make integration
+      - name: Exercise uploads against PostgreSQL and private MinIO
+        run: |
+          docker compose up --build -d minio
+          docker compose run --build --rm --no-deps minio-init
+          set -a; . ./.env; set +a
+          export IT_PG_ADMIN_URL="postgres://examory:$POSTGRES_PASSWORD@127.0.0.1:5432/postgres?sslmode=disable"
+          export MINIO_ENDPOINT=127.0.0.1:9000 MINIO_PUBLIC_ENDPOINT=127.0.0.1:9000
+          export MINIO_ACCESS_KEY=files_writer MINIO_SECRET_KEY="$FILES_S3_SECRET" MINIO_SECURE=false
+          cd services/files
+          go test -race -count=1 -tags integration -run '^TestUploadsInPostgresAndMinIO$' ./internal/service
       - name: Build images and run the gateway end-to-end test (auth + quizzes)
         run: |
           docker compose up -d --build --wait auth courses quizzes gateway
