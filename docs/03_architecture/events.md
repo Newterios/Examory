@@ -112,6 +112,33 @@ Counting conventions (fixed in v0.2):
 - `score` and `max_score` are raw points; consumers compare attempts as `100 * score / max_score` with `max_score > 0`.
 - `answers_changed` is the **number of change events** (`quiz.answered` with `is_change = true`), not the number of distinct changed questions.
 
+### Proposed in LMS-38 (draft v0.3, pending review by all three members)
+
+These additions are implemented by `auth` and `quizzes` in stage 2 and validated by the JSON Schemas in `schemas/`. They are additive (payload versions stay at 1) and become part of the contract once this pull request is reviewed.
+
+- `quiz.answered.answer_hash` for choice questions: the canonical normalized answer is the selected **option ids** (not the shuffled display labels), each trimmed and case-folded, sorted, de-duplicated and joined with `\n`; the hash is lowercase hex SHA-256 of that string. Example: options `B`, `a` → `sha256("a\nb")` = `7e18f737311b2dc3b2f269dd78396b0351f14fb66efa879f768cb23181883c78`.
+- `quiz.submitted.reason` (optional): `submitted` or `timed_out`. A timed-out attempt has `occurred_at` at its deadline (or its last accepted save if later), so `duration_ms` never exceeds the time available plus the save grace.
+- An identical re-save of the current answer produces no `quiz.answered`; answering requires the question to have been shown (`time_since_shown_ms` is never fabricated).
+- Platform ids are lowercase UUIDv7 strings; the schemas also accept prefixed fixture ids such as `att_88`.
+- `lms.users` payloads (no e-mail or name, NFR-9). Partition key: `payload.user_id` for `user.*`, `payload.group_id` for `group.updated`.
+
+```json
+{ "user_id": "u_123", "role": "student", "created_by": "u_1" }                 // user.created
+{ "user_id": "u_123", "method": "password" }                                      // user.logged_in
+{ "user_id": "u_123", "reason": "logout | token_reuse | deactivated" }            // user.logged_out
+{ "group_id": "g_5", "name": "SE-2424", "course_id": "c_10 | null",
+  "change": "created | member_added | member_removed",
+  "member_user_id": "u_123 | null", "member_count": 25 }                         // group.updated
+```
+
+### Proposed for M4 (draft v0.3, pending review)
+
+- `risk.behavior_anomaly` and `risk.reviewed` have JSON Schemas (`schemas/risk.behavior_anomaly.v1.schema.json`, `schemas/risk.reviewed.v1.schema.json`). `evidence.features` stays open for additional keys, as §4 allows; the documented keys are typed.
+- `risk_id` of `risk.behavior_anomaly` is deterministic per model version and attempt (UUIDv5), so re-processing an attempt never yields a second signal. `grading` deduplicates by `event_id` and by `risk_id`.
+- Partition keys: `risk.behavior_anomaly` is keyed by `payload.target_id` (the attempt). `risk.reviewed` is keyed by `context.course_id`, or by `risk_id` when no course is known.
+- The behavior scorer reuses `ml/anomaly/to_risk_event.py` unchanged, so its envelope carries `producer: "integrity"` and `actor: {"user_id": "integrity", "role": "system"}`.
+- `risk.reviewed` actor is the reviewing teacher (`role: teacher`; admins do not review, TS §2). `comment` is the required reason (1–2000 characters).
+
 ### `grade.assigned` (v1)
 
 ```json
@@ -246,6 +273,30 @@ Signal only; never a verdict. Published only after an offline evaluation with do
 - `synchronous_with` lists peer `attempt_id` values submitted within ±5 s in the same quiz, variant and cohort.
 - Additional feature keys may be added without a version bump; consumers ignore unknown keys.
 
+**Per-question timing (FR-42, proposal, pending review).** A behavior risk can include `evidence.features.per_question`. Each row describes one answered question in the target attempt. Rows appear in increasing order of the zero-based variant index. In this example the student saved a first answer to the third question after 690 ms and revised it later.
+
+```json
+{
+  "question_index": 2,
+  "first_answer_time_ms": 690,
+  "reference_median_ms": 4400.5,
+  "reference_scope": "item_train",
+  "fast_threshold_ms": 1200,
+  "is_fast": true,
+  "answer_changed": true
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `question_index` | Position in the student's variant, using the same index as `quiz.answered`. |
+| `first_answer_time_ms` | Milliseconds from first display to the first saved answer. Later revisions retain this original time. |
+| `reference_median_ms`, `reference_scope` | Median first-answer time among normal training attempts for this quiz, variant and question when at least 30 observations were available (`item_train`). Other items use the median of all normal training first answers (`global_train`). Older model artifacts report `null` and `unavailable`. The E-15 proposal adds `item_quiz_history` and `global_quiz_history` for a historical reference fitted within the quiz. Confirmed attempts are excluded. The digest in `features.reference_version` identifies the snapshot. |
+| `fast_threshold_ms`, `is_fast` | The model's normal-training 10th percentile for the item, with its global fallback. The flag is true exactly when `first_answer_time_ms < fast_threshold_ms`. |
+| `answer_changed` | True when at least one saved revision for this question has `is_change: true`. |
+
+The array is optional for v1 readers. A teacher can use it to locate a timing observation within the attempt. The existing model score and severity determine whether a risk is emitted.
+
 #### `risk.proctoring`
 
 ```json
@@ -304,9 +355,13 @@ A `grade_suggestion` is advisory; only an explicit teacher save through `grading
 
 - Adding an optional field: same `version`.
 - Removing or renaming a field, changing a type or a counting convention: `version + 1`; consumers must support the previous version for 30 days.
-- Each payload will have a JSON Schema in `docs/03_architecture/schemas/` (to be added in stage 2).
+- Each payload has a JSON Schema (draft 2020-12, `additionalProperties: false`) in `docs/03_architecture/schemas/` named `<event_type>.v<version>.schema.json`; `envelope.schema.json` holds the envelope and shared definitions. Stage 2 covers the events produced by `auth` and `quizzes`.
 
 ## 6. Changelog
+
+**E-07 (November 2026, proposal, pending review).** Added the optional `evidence.features.per_question` array for behavior risks. Existing v1 messages remain valid. Run `make sync-schemas` to refresh the schema embedded by `grading`.
+
+**v0.3-draft (November 2026, LMS-38 and M4, pending review)** — schemas for `risk.behavior_anomaly` and `risk.reviewed`, deterministic behavior `risk_id`, risk partition keys; JSON Schemas for the envelope and the `auth`/`quizzes` events; `lms.users` payloads; canonical `answer_hash` form for choice questions; optional `quiz.submitted.reason`; timeout `occurred_at` rule; no event for identical re-saves. All additive; payload versions stay at 1.
 
 **v0.2 (October 2026)** — clarifications raised by the technical specification (LMS-5), dataset plan (LMS-10) and the synthetic generator (LMS-19); all additive, payload versions stay at 1:
 
