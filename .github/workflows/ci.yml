@@ -6,24 +6,86 @@ on:
     branches: [main]
     tags: ["prob-period-*", "v*"]
 
+permissions:
+  contents: read
+
 jobs:
   go-services:
-    name: Build and test Go services
+    name: Build, vet, race-test and vulncheck Go services
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          # Go 1.25 is out of support; current dependencies need >= 1.26.
+          go-version: "1.26"
+          cache-dependency-path: services/*/go.sum
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Build and test every Go module under services/
         run: |
           set -e
           mods=$(find services -name go.mod -not -path '*/vendor/*' || true)
           if [ -z "$mods" ]; then echo "No Go modules yet, skipping"; exit 0; fi
+          unformatted=$(gofmt -l services)
+          if [ -n "$unformatted" ]; then echo "gofmt needed:"; echo "$unformatted"; exit 1; fi
           for m in $mods; do
             d=$(dirname "$m"); echo "== $d"
-            (cd "$d" && go vet ./... && go build ./... && go test ./...)
+            (cd "$d" && go vet ./... && go vet -tags integration ./... && go build ./... && go test -race ./... && "$(go env GOPATH)/bin/govulncheck" ./...)
           done
+
+  go-integration:
+    name: Integration tests against compose infrastructure
+    runs-on: ubuntu-latest
+    needs: go-services
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: services/*/go.sum
+      - name: Generate throwaway secrets and start infrastructure
+        run: |
+          ./scripts/dev-env.sh
+          docker compose up -d --wait postgres redis kafka
+          docker compose run --rm postgres-init
+          docker compose run --rm kafka-init
+      - name: Run integration tests (platform and services)
+        run: make integration
+      - name: Build images and run the gateway end-to-end test (auth + quizzes)
+        run: |
+          docker compose up -d --build --wait auth courses quizzes gateway
+          set -a; . ./.env; set +a
+          cd services/quizzes
+          E2E_GATEWAY_URL=http://127.0.0.1:8000 E2E_ADMIN_EMAIL="$AUTH_BOOTSTRAP_ADMIN_EMAIL" \
+          E2E_ADMIN_PASSWORD="$AUTH_BOOTSTRAP_ADMIN_PASSWORD" IT_KAFKA_BROKERS=127.0.0.1:9092 \
+          go test -count=1 -tags integration -run E2E -v ./integration/
+      - name: M4 scenario (anomaly model, scorer, grading, research overlay)
+        run: |
+          make m4
+          make e2e
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose logs auth courses quizzes grading anomaly-scorer gateway kafka-init postgres-init
+
+  anomaly-service:
+    name: Anomaly scorer (Python) tests, lint and audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned dependencies
+        run: python -m pip install -r ml/service/requirements.txt ruff pip-audit
+      - name: Unit tests
+        run: python -m unittest discover -s ml/service/tests -v
+      - name: Ruff
+        run: ruff check ml/service
+      - name: pip-audit
+        run: pip-audit -r ml/service/requirements.txt
+      - name: Image builds
+        run: docker build -f ml/service/Dockerfile -t examory/anomaly-scorer:ci .
 
   go-sim:
     name: Build and test the behaviour simulator
@@ -74,8 +136,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Required files exist
         run: |
-          for f in README.md docs/03_architecture/architecture.md docs/03_architecture/events.md docker-compose.yml; do
+          for f in README.md docs/03_architecture/architecture.md docs/03_architecture/events.md docker-compose.yml docker-compose.research.yml .env.example gateway/nginx.conf; do
             test -f "$f" || { echo "missing $f"; exit 1; }
           done
       - name: Compose file is valid
-        run: docker compose config -q
+        run: |
+          cp .env.example .env
+          docker compose config -q
+          docker compose -f docker-compose.yml -f docker-compose.research.yml config -q
+      - name: Event schemas are valid JSON
+        run: for f in docs/03_architecture/schemas/*.json; do python3 -m json.tool "$f" > /dev/null || exit 1; done

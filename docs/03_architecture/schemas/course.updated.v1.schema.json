@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/course.updated.v1.schema.json",
+  "title": "course.updated v1",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": {
+      "const": "course.updated"
+    },
+    "version": {
+      "const": 1
+    },
+    "producer": {
+      "const": "courses"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "course_id",
+        "status",
+        "revision"
+      ],
+      "properties": {
+        "course_id": {
+          "$ref": "envelope.schema.json#/$defs/id"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "published",
+            "archived"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}
