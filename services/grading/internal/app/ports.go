@@ -60,6 +60,11 @@ type Store interface {
 
 // Tx is the transactional repository.
 type Tx interface {
+	LockGrade(ctx context.Context, attempt, teacher, key string) (*domain.AttemptSummary, error)
+	LastGradeRevision(ctx context.Context, attempt string) (int, error)
+	InsertGrade(ctx context.Context, g domain.Grade) error
+	GradeByKey(ctx context.Context, teacher, key string) (*domain.Grade, error)
+	Grades(ctx context.Context, attempt string, history bool) ([]domain.Grade, error)
 	// UpsertAttempt stores an attempt summary once (first quiz.submitted wins).
 	UpsertAttempt(ctx context.Context, a domain.AttemptSummary) (bool, error)
 	// InsertRisk stores a risk unless its contract risk_id already exists.

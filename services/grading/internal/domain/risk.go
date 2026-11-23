@@ -5,7 +5,7 @@
 // Invariant (FR-26): nothing in this package changes a grade, imposes a
 // penalty or declares misconduct. A review only records a decision about a
 // signal; any academic action is a separate, explicit teacher operation that
-// does not exist yet.
+// is recorded independently of the review.
 package domain
 
 import (

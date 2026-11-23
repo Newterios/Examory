@@ -44,11 +44,13 @@ func Register(e *gin.Engine, d Deps) {
 		httpx.RateLimit(d.Limiter, d.Logger, "ip", d.PerIP, time.Minute, httpx.ByIP),
 		httpx.Authenticate(d.Verifier),
 		httpx.RateLimit(d.Limiter, d.Logger, "sub", d.PerSubject, time.Minute, httpx.BySubject),
-		httpx.RequireRoles(authn.RoleTeacher, authn.RoleAdmin),
 	)
-	v1.GET("/risks", h.list)
-	v1.GET("/risks/:riskId", h.get)
-	v1.POST("/risks/:riskId/review", h.review)
+	v1.PUT("/attempts/:attemptId/grade", httpx.RequireRoles(authn.RoleTeacher), h.grade)
+	v1.GET("/attempts/:attemptId/grade", httpx.RequireRoles(authn.RoleTeacher, authn.RoleStudent), h.readGrade)
+	v1.GET("/attempts/:attemptId/grade/history", httpx.RequireRoles(authn.RoleTeacher), h.readGrade)
+	v1.GET("/risks", httpx.RequireRoles(authn.RoleTeacher, authn.RoleAdmin), h.list)
+	v1.GET("/risks/:riskId", httpx.RequireRoles(authn.RoleTeacher), h.get)
+	v1.POST("/risks/:riskId/review", httpx.RequireRoles(authn.RoleTeacher), h.review)
 }
 
 type handler struct{ d Deps }

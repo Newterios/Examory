@@ -28,6 +28,7 @@ type Event struct {
 
 // State is the fake database content.
 type State struct {
+	Grades   []domain.Grade
 	Attempts map[string]domain.AttemptSummary
 	Risks    map[string]domain.Risk
 	Reviews  map[string]domain.Review
@@ -65,6 +66,7 @@ func clone(s State) State {
 	if out.Reviews == nil {
 		out.Reviews = map[string]domain.Review{}
 	}
+	out.Grades = append([]domain.Grade(nil), s.Grades...)
 	return out
 }
 

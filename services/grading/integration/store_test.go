@@ -134,8 +134,8 @@ func TestStoreAgainstPostgres(t *testing.T) {
 	if count(`SELECT count(*) FROM audit_log WHERE action IN ('risk.received','risk.evidence_viewed','risk.reviewed')`) != 3 {
 		t.Fatal("audit rows")
 	}
-	// FR-26 in the schema: the attempt summary is untouched and there is no grade table.
-	if count(`SELECT score FROM attempts WHERE attempt_id=$1`, attempt) != 17 || count(`SELECT count(*) FROM information_schema.tables WHERE table_name ILIKE '%grade%'`) != 0 {
+	// FR-26 in the schema: the attempt summary is untouched and no grade revision was written by the review.
+	if count(`SELECT score FROM attempts WHERE attempt_id=$1`, attempt) != 17 || count(`SELECT count(*) FROM grade_revisions`) != 0 {
 		t.Fatal("FR-26")
 	}
 	mustFail := func(name, sql string, args ...any) {
@@ -143,6 +143,29 @@ func TestStoreAgainstPostgres(t *testing.T) {
 			t.Errorf("%s accepted by the schema", name)
 		}
 	}
+	points := 12.5
+	input := domain.GradeInput{Grade: &points, Feedback: "published"}
+	var versions sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		versions.Add(1)
+		go func() {
+			defer versions.Done()
+			g, _, err := svc.SetGrade(ctx, teacher, attempt, "grade-same-001", input)
+			if err != nil || g.Revision != 1 {
+				t.Errorf("grade retry: %v %v", g, err)
+			}
+		}()
+	}
+	versions.Wait()
+	points = 13.5
+	if g, _, err := svc.SetGrade(ctx, teacher, attempt, "grade-correct-002", input); err != nil || g.Revision != 2 {
+		t.Fatalf("grade correction: %v %v", g, err)
+	}
+	if count("SELECT count(*) FROM grade_revisions") != 2 || count("SELECT count(*) FROM outbox WHERE event_type='grade.assigned'") != 2 || count("SELECT count(*) FROM audit_log WHERE action='grade.assigned'") != 2 {
+		t.Fatal("grade/history/outbox/audit counts")
+	}
+	mustFail("rewrite grade", "UPDATE grade_revisions SET grade=0")
+	mustFail("delete grade", "DELETE FROM grade_revisions")
 	mustFail("re-open risk", `UPDATE risks SET status='open', version=version+1 WHERE id=$1`, id)
 	mustFail("edit evidence", `UPDATE risks SET explanation='edited' WHERE id=$1`, id)
 	mustFail("delete risk", `DELETE FROM risks WHERE id=$1`, id)

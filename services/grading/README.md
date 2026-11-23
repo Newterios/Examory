@@ -2,7 +2,7 @@
 
 Risk signals and the teacher review workflow of the M4 scenario (project_management.md §3a). `grading` consumes `risk.behavior_anomaly` from `ai.risk` and `quiz.submitted` from `lms.quizzes`, stores each signal next to the attempt it concerns, lets a teacher confirm or dismiss it with a reason, and publishes `risk.reviewed` to `lms.grades`.
 
-**Human in the loop (FR-26).** A risk signal never changes a grade, imposes a penalty, blocks a student or declares misconduct. This service has no grade table and no code path from a signal or a review to a grade. Tests assert this: attempt data is unchanged after a review; no `grade.*` event is produced; the student's quiz result is unchanged in the end-to-end test. Grade entry (FR-17, `grade.assigned`) is a separate, future teacher action.
+**Human in the loop (FR-26).** A risk signal never changes a grade, imposes a penalty, blocks a student or declares misconduct. A teacher explicitly publishes or corrects a grade through the grade endpoint. Tests verify that a review preserves the attempt, its grade and the original quiz result.
 
 ## Architecture
 
@@ -96,7 +96,7 @@ make m4 && make e2e                            # full M4 scenario through the ga
 |---|---|
 | FR-24 | **Covered** for behavior signals: category, severity (`level`), score, explanation, evidence, `processing_ms` and review state. No per-teacher case assignment (see limitations). |
 | FR-25 | **Covered**: confirm/dismiss with a required reason; reviewer and timestamp recorded; `risk.reviewed` published. |
-| FR-26 | **Covered** by design and tests (no grade path). |
+| FR-26 | **Covered** by design and tests (independent teacher actions). |
 | FR-27 | **Not covered**: no student-visible outcomes and no clarification flow. |
 | FR-28 | **Partial**: signals are listed with review state, and the notice says that absence of a signal is not proof of integrity. Pending, failed and no-signal states per attempt are not exposed by grading; the scorer records them (`not_scorable`, `scored`) in its own database only. |
 | FR-41 | Via `ml/service`: `quiz.answered` and `quiz.submitted` are consumed, and explainable `risk.behavior_anomaly` signals are returned. |
@@ -118,7 +118,7 @@ make m4 && make e2e                            # full M4 scenario through the ga
 | Double or contradictory reviews | Primary key on the review row, row lock, `If-Match` version, trigger on status, idempotency key per reviewer |
 | Tampering with the history | Signals immutable; reviews and audit append-only (triggers) |
 | Evidence access without trace | Every detail read is audited |
-| Automatic sanctions | No grade code path; the notice is on every response; tests |
+| Automatic sanctions | Only an explicit grade request writes an academic decision |
 | Injection, oversized input | pgx parameters only, strict JSON, 16 KiB review body, 2000-character comment, pagination ≤ 100, UUID path ids, rate limits |
 
 ## Dependencies

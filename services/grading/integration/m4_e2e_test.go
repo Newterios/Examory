@@ -275,6 +275,13 @@ func TestM4Scenario(t *testing.T) {
 		t.Fatalf("second review %d %v", code, m)
 	}
 	// FR-26: the review changed nothing about the student's result.
+	gradePath := "/api/grading/v1/attempts/" + attempts["fastA"] + "/grade"
+	gw.must(404, "GET", gradePath, fastA, nil, nil)
+	grade := gw.must(200, "PUT", gradePath, teacher, map[string]any{"grade": 11, "feedback": "Reviewed manually"}, map[string]string{"Idempotency-Key": "m4-grade-" + run})
+	published := gw.must(200, "GET", gradePath, fastA, nil, nil)
+	if grade["revision"] != published["revision"] || published["grade"] != float64(11) {
+		t.Fatalf("published grade: %v", published)
+	}
 	scoreAfter := gw.must(200, "GET", "/api/quizzes/v1/attempts/"+attempts["fastA"], fastA, nil, nil)["result"]
 	if fmt.Sprint(scoreBefore) != fmt.Sprint(scoreAfter) {
 		t.Fatalf("attempt result changed by a review: %v -> %v", scoreBefore, scoreAfter)
