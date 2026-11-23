@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://examory.dev/schemas/quiz.submitted.v1.schema.json",
+  "title": "quiz.submitted v1",
+  "description": "Published exactly once per attempt. reason is an optional additive field (proposed in LMS-38).",
+  "$ref": "envelope.schema.json",
+  "properties": {
+    "event_type": { "const": "quiz.submitted" },
+    "version": { "const": 1 },
+    "producer": { "const": "quizzes" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "quiz_id", "variant_id", "score", "max_score", "duration_ms", "answers_changed"],
+      "properties": {
+        "attempt_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "quiz_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "variant_id": { "$ref": "envelope.schema.json#/$defs/id" },
+        "score": { "type": "integer", "minimum": 0 },
+        "max_score": { "type": "integer", "minimum": 1 },
+        "duration_ms": { "$ref": "envelope.schema.json#/$defs/non_negative_ms" },
+        "answers_changed": { "type": "integer", "minimum": 0 },
+        "reason": { "enum": ["submitted", "timed_out"] }
+      }
+    }
+  }
+}
