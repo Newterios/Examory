@@ -1,0 +1,37 @@
+{
+  "event_type": "risk.proctoring",
+  "event_id": "01a19467-e800-7000-8000-000000000019",
+  "version": 1,
+  "occurred_at": "2026-11-01T00:00:00.000Z",
+  "producer": "proctoring",
+  "actor": {
+    "user_id": "proctoring",
+    "role": "system"
+  },
+  "context": {
+    "course_id": "c_fixture",
+    "group_id": "g_fixture",
+    "session_id": "s_fixture"
+  },
+  "payload": {
+    "risk_id": "risk_fixture",
+    "target_type": "exam_session",
+    "target_id": "s_fixture",
+    "model": {
+      "name": "opencv-frontal-presence",
+      "version": "1.0"
+    },
+    "level": "medium",
+    "score": 0.2,
+    "explanation": "Synthetic FR-52 acceptance fixture for a 15-second recording.",
+    "evidence": {
+      "segments": [
+        {
+          "from_ms": 1000,
+          "to_ms": 4000,
+          "kind": "absent"
+        }
+      ]
+    }
+  }
+}
