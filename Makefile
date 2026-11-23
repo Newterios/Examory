@@ -56,7 +56,7 @@ anomaly-model: ## train the demo anomaly model INSIDE the scorer image (same lib
 	  mv .env.tmp .env; chmod 600 .env; fi; echo "model.pkl sha256=$$sha (pinned in .env as ANOMALY_MODEL_SHA256)"
 
 sync-schemas: ## refresh the schema copies embedded by grading
-	cp docs/03_architecture/schemas/envelope.schema.json docs/03_architecture/schemas/grade.assigned.v1.schema.json docs/03_architecture/schemas/risk.behavior_anomaly.v1.schema.json \
+	cp docs/03_architecture/schemas/envelope.schema.json docs/03_architecture/schemas/grade.assigned.v1.schema.json docs/03_architecture/schemas/risk.plagiarism.v1.schema.json docs/03_architecture/schemas/risk.behavior_anomaly.v1.schema.json \
 	  services/grading/internal/adapters/schemas/
 
 py-test: ## anomaly scorer unit tests (needs ml/service/requirements.txt installed)
