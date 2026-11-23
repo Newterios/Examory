@@ -94,8 +94,19 @@ The unit tests (`ml/service/tests/test_service.py`, run with `python -m unittest
 ## Known limitations
 
 - A global watermark plus a lateness bound, not a per-partition watermark. Attempts are scored once; late peers do not trigger re-scoring.
-- Only 1-point, fully answered quizzes are scorable (frozen pipeline v1).
+- The frozen v1 artifact requires a fully answered, one-point quiz. The v2 reader accepts partial and weighted attempts and needs at least one observed answer.
 - The demo model is trained on synthetic generator data. Item timing references do not exist for live quiz ids, so the global fast-answer threshold is used.
 - The score is a relative ranking, not a probability (events.md §4). The model has not been validated on real students.
 - Single-threaded loop with one DB connection; the cohort is re-read and re-parsed for every attempt (quadratic in cohort size; fine for class-sized cohorts).
 - No metrics. The `attempts.status` and `detail` columns are the only record of pending, not-scorable and no-signal outcomes, and they are not exposed through an API (FR-28 partial).
+
+## V2 reader for sparse and weighted quizzes
+
+Convert a trusted, pinned service-trained model to a new file. Set `ANOMALY_MODEL_PATH` and `ANOMALY_MODEL_SHA256` in the scorer container to the new file and its printed digest. Existing v1 files remain supported. The command refuses to overwrite an existing version. Both readers use the original fitted estimators and validation cutoffs. The embedded model version gains a `-v2` suffix.
+
+```sh
+python -m ml.service.upgrade_v2 --model ml/service/model/model.pkl \
+  --sha256 "$(cat ml/service/model/model.sha256)" --output ml/service/model/live-v2.pkl
+```
+
+Timing and revision features use observed question answers. V2 preserves the submitted weighted percentage and the original question indices, including omitted questions. Unanswered questions do not acquire fabricated response times. When `quiz.started` is available, v2 validates the returned indices against its roster size. Published evidence carries the answer count, available roster size and submission reason. An empty attempt has no timing observation and remains unscorable. A timeout alone cannot generate an alert. [Paired simulation and reference experiment](../experiments/behavior/live_results.md)

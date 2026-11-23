@@ -30,6 +30,7 @@ from ml.anomaly.to_risk_event import risk_event
 from ml.anomaly.train import score_model
 
 from .evidence import question_evidence
+from .pipeline_v2 import prepare_v2
 
 MODEL_KEY = "iforest"
 MODEL_NAME = "isolation-forest-v1"  # as named by ml/anomaly/to_risk_event.py
@@ -112,18 +113,23 @@ class Scorer:
         target = events_by_attempt.get(target_attempt_id)
         if not target:
             return Outcome("not_scorable", reason="no events for the attempt")
-        reason = check_attempt(target)
-        if reason:
-            return Outcome("not_scorable", reason=reason)
-        valid: list[dict[str, Any]] = []
-        excluded: dict[str, str] = {}
-        for attempt_id, events in events_by_attempt.items():
-            problem = None if attempt_id == target_attempt_id else check_attempt(events)
-            if problem:
-                excluded[attempt_id] = problem
-            else:
-                valid.extend(events)
-        attempts = read_attempts(io.StringIO(to_csv(valid)))
+        if self.artifact.get("schema_version", 1) == 2:
+            attempts, excluded = prepare_v2(events_by_attempt)
+            if target_attempt_id in excluded:
+                return Outcome("not_scorable", reason=excluded[target_attempt_id])
+        else:
+            reason = check_attempt(target)
+            if reason:
+                return Outcome("not_scorable", reason=reason)
+            valid: list[dict[str, Any]] = []
+            excluded = {}
+            for attempt_id, events in events_by_attempt.items():
+                problem = None if attempt_id == target_attempt_id else check_attempt(events)
+                if problem:
+                    excluded[attempt_id] = problem
+                else:
+                    valid.extend(events)
+            attempts = read_attempts(io.StringIO(to_csv(valid)))
         frame = build_features(attempts, self.artifact["reference"])
         scores = score_model(frame, self.model)
         rows = frame.to_dict("records")
@@ -138,6 +144,10 @@ class Scorer:
         event["payload"]["evidence"]["features"]["per_question"] = question_evidence(
             attempts[index], target, self.artifact["reference"]
         )
+        if self.artifact.get("schema_version", 1) == 2:
+            event["payload"]["evidence"]["features"].update({
+                key: attempts[index][key] for key in ("submission_reason", "answered_questions", "total_questions")
+            })
         event["payload"]["risk_id"] = deterministic_risk_id(self.version, target_attempt_id)
         if event["payload"]["level"] != level:  # both derive from the same thresholds
             raise AssertionError("severity mapping diverged from the frozen pipeline")

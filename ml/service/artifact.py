@@ -12,15 +12,14 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import os
+import pickle
 import stat
 from pathlib import Path
 from typing import Any
 
-from ml.anomaly.train import load_artifact
-
+from .pipeline_v2 import POLICY
 from .scoring import MODEL_KEY
 
-SUPPORTED_SCHEMA_VERSION = 1
 PINNED_LIBRARIES = ("numpy", "pandas", "scikit-learn")
 
 
@@ -43,21 +42,26 @@ def load_verified(path: str | Path, expected_sha256: str | None = None) -> dict[
         raise ArtifactError("model artifact must be a regular file")
     if info.st_mode & stat.S_IWOTH:
         raise ArtifactError("model artifact is world-writable; refusing to unpickle it")
-    if expected_sha256:
-        actual = sha256_of(p)
-        if actual != expected_sha256.strip().lower():
-            raise ArtifactError("model artifact SHA-256 does not match ANOMALY_MODEL_SHA256")
     try:
-        artifact = load_artifact(p)  # frozen loader; checks schema_version == 1
-    except (ValueError, KeyError) as exc:
+        with p.open("rb") as stream:
+            mode = os.fstat(stream.fileno()).st_mode
+            if not stat.S_ISREG(mode) or mode & stat.S_IWOTH:
+                raise ArtifactError("opened model artifact has unsafe permissions or type")
+            if expected_sha256 and hashlib.file_digest(stream, "sha256").hexdigest() != expected_sha256.strip().lower():
+                raise ArtifactError("model artifact SHA-256 does not match ANOMALY_MODEL_SHA256")
+            stream.seek(0)
+            artifact = pickle.load(stream)
+    except (ValueError, KeyError, EOFError, pickle.UnpicklingError) as exc:
         raise ArtifactError(f"unsupported artifact: {exc}") from exc
     verify(artifact)
     return artifact
 
 
 def verify(artifact: dict[str, Any]) -> None:
-    if not isinstance(artifact, dict) or artifact.get("schema_version") != SUPPORTED_SCHEMA_VERSION:
+    if not isinstance(artifact, dict) or artifact.get("schema_version") not in (1, 2):
         raise ArtifactError("artifact schema_version is not supported")
+    if artifact["schema_version"] == 2 and artifact.get("input_policy") != POLICY:
+        raise ArtifactError("unsupported v2 input policy")
     model = artifact.get("models", {}).get(MODEL_KEY)
     if not isinstance(model, dict):
         raise ArtifactError("artifact has no iforest model")
